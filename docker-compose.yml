@@ -3,13 +3,14 @@ services:
     build: .
     container_name: underpod
     restart: unless-stopped
-    env_file: .env
     ports:
       # bind to loopback only — Caddy reverse-proxies the public vhost
       - "127.0.0.1:4749:4749"
     volumes:
       - underpod-data:/app/data
     environment:
+      # set on the host when starting: UNDERPOD_WALLET=0x... docker-compose up -d
+      UNDERPOD_WALLET: ${UNDERPOD_WALLET:-}
       UNDERPOD_DB: /app/data/underpod.db
 
 volumes:
