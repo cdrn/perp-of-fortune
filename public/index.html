@@ -3,119 +3,145 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PERMANENT UNDERPOD — live</title>
+    <title>Permanent Underpod — the live drowning</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Anton&family=JetBrains+Mono:wght@400;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=EB+Garamond:ital@0;1&family=JetBrains+Mono:wght@400;700&display=swap"
       rel="stylesheet"
     />
     <style>
       :root {
-        --abyss: #03080f;
-        --deep: #061626;
-        --sea: #0a3a5c;
-        --foam: #7fd4ff;
-        --sonar: #36f5a0;
-        --warn: #ffc34d;
-        --blood: #ff4d6d;
-        --ink: #cfe8ff;
-        --mute: #5b7a92;
-        --grid: rgba(54, 245, 160, 0.07);
+        --void: #0a0907;
+        --pitch: #040403;
+        --gold: #f5c518;
+        --gold-deep: #b8860b;
+        --gold-dim: #6b5618;
+        --ember: #ff7a3c;
+        --blood: #e2384c;
+        --profit: #74e6a0;
+        --parch: #e9dcc2;
+        --mute: #8a7c5e;
+        --line: rgba(245, 197, 24, 0.16);
+        --candle: rgba(255, 170, 60, 0.16);
       }
       * { box-sizing: border-box; margin: 0; padding: 0; }
       html, body { height: 100%; }
       body {
         font-family: "JetBrains Mono", monospace;
+        color: var(--parch);
         background:
-          radial-gradient(120% 80% at 50% -10%, #0c2438 0%, var(--deep) 38%, var(--abyss) 100%);
-        color: var(--ink);
+          radial-gradient(70% 50% at 50% -8%, #2a1f08 0%, var(--void) 42%, var(--pitch) 100%);
         min-height: 100%;
         overflow-x: hidden;
         position: relative;
       }
-      /* sonar grid wash */
+      /* candlelight flicker + grain */
       body::before {
         content: "";
-        position: fixed; inset: 0;
-        background-image:
-          linear-gradient(var(--grid) 1px, transparent 1px),
-          linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-        background-size: 44px 44px;
-        mask-image: radial-gradient(80% 60% at 50% 20%, #000 30%, transparent 100%);
-        pointer-events: none;
-        z-index: 0;
+        position: fixed; inset: 0; z-index: 0; pointer-events: none;
+        background: radial-gradient(50% 40% at 50% 0%, var(--candle), transparent 70%);
+        animation: flicker 5s ease-in-out infinite;
       }
-      .wrap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 28px 22px 80px; }
+      body::after {
+        content: "";
+        position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.05;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+      @keyframes flicker { 0%,100%{opacity:1} 45%{opacity:.82} 70%{opacity:.94} }
 
-      header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid rgba(127,212,255,0.14); padding-bottom: 16px; }
-      .brand { font-family: "Anton", sans-serif; font-size: clamp(26px, 4.4vw, 48px); letter-spacing: 0.06em; line-height: 0.92; text-transform: uppercase; }
-      .brand span { color: var(--sonar); }
-      .tag { color: var(--mute); font-size: 12px; max-width: 360px; text-align: right; }
-      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--sonar); box-shadow: 0 0 10px var(--sonar); margin-right: 6px; animation: pulse 2s infinite; }
-      .dot.stale { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+      .wrap { position: relative; z-index: 1; max-width: 1140px; margin: 0 auto; padding: 26px 22px 80px; }
+
+      header { display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+      .logo { width: 56px; height: 56px; flex: 0 0 auto; border-radius: 50%; background: var(--pitch); border: 2px solid var(--gold); display: grid; place-items: center; box-shadow: 0 0 22px rgba(245,197,24,0.25); }
+      .logo svg { width: 36px; height: 36px; }
+      .titles { flex: 1; }
+      .brand { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(20px, 3.4vw, 32px); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); line-height: 1; }
+      .sub { font-family: "EB Garamond", serif; font-style: italic; font-size: 14px; color: var(--mute); margin-top: 4px; }
+      .live { text-align: right; font-size: 12px; color: var(--mute); white-space: nowrap; }
+      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--profit); box-shadow: 0 0 10px var(--profit); margin-right: 6px; animation: pulse 2s infinite; }
+      .dot.stale { background: var(--ember); box-shadow: 0 0 10px var(--ember); }
+      .dot.standby { background: var(--mute); box-shadow: none; animation: none; }
       @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 
-      .roll { margin: 22px 0 8px; font-family: "Anton", sans-serif; font-size: clamp(20px, 3.6vw, 34px); letter-spacing: 0.04em; text-transform: uppercase; }
-      .roll .side-long { color: var(--sonar); }
+      .roll { margin: 24px 0 6px; font-family: "Cinzel", serif; font-weight: 700; font-size: clamp(18px, 3vw, 30px); letter-spacing: 0.04em; text-transform: uppercase; color: var(--parch); }
+      .roll .lead { color: var(--gold-deep); }
+      .roll .side-long { color: var(--profit); }
       .roll .side-short { color: var(--blood); }
-      .roll small { font-family: "JetBrains Mono", monospace; font-size: 13px; color: var(--mute); letter-spacing: 0; text-transform: none; display: block; margin-top: 4px; }
+      .roll small { font-family: "JetBrains Mono", monospace; font-weight: 400; font-size: 13px; color: var(--mute); letter-spacing: 0; text-transform: none; display: block; margin-top: 6px; }
 
-      .stage { display: grid; grid-template-columns: 1.6fr 1fr; gap: 22px; margin-top: 18px; }
+      .stage { display: grid; grid-template-columns: 1.6fr 1fr; gap: 22px; margin-top: 16px; }
       @media (max-width: 820px) { .stage { grid-template-columns: 1fr; } }
 
-      .pnlcard { position: relative; border: 1px solid rgba(127,212,255,0.16); border-radius: 14px; padding: 26px 24px; background: linear-gradient(180deg, rgba(10,58,92,0.18), rgba(3,8,15,0.4)); overflow: hidden; }
-      .pnllabel { color: var(--mute); font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; }
-      .pnl { font-family: "Anton", sans-serif; font-size: clamp(54px, 11vw, 120px); line-height: 0.9; letter-spacing: 0.01em; margin-top: 6px; transition: color .4s; }
-      .pnl.up { color: var(--sonar); text-shadow: 0 0 28px rgba(54,245,160,0.4); }
-      .pnl.down { color: var(--blood); text-shadow: 0 0 28px rgba(255,77,109,0.4); }
-      .roi { font-size: 18px; margin-top: 2px; }
-      .spark { width: 100%; height: 90px; margin-top: 14px; display: block; }
+      .card { position: relative; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, rgba(245,197,24,0.05), rgba(4,4,3,0.5)); overflow: hidden; }
+      .pnlcard { padding: 26px 24px; }
+      .pnllabel { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 12px; text-transform: uppercase; letter-spacing: 0.22em; }
+      .pnl { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(50px, 10vw, 108px); line-height: 0.95; margin-top: 8px; transition: color .4s; }
+      .pnl.up { color: var(--profit); text-shadow: 0 0 30px rgba(116,230,160,0.35); }
+      .pnl.down { color: var(--blood); text-shadow: 0 0 30px rgba(226,56,76,0.4); }
+      .roi { font-size: 17px; margin-top: 4px; }
+      .spark { width: 100%; height: 88px; margin-top: 14px; display: block; }
 
-      .gauge { border: 1px solid rgba(127,212,255,0.16); border-radius: 14px; padding: 0; overflow: hidden; position: relative; min-height: 320px; background: var(--abyss); }
-      .gaugehead { position: absolute; top: 12px; left: 14px; right: 14px; z-index: 3; display: flex; justify-content: space-between; font-size: 11px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.14em; }
-      .water { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, rgba(54,245,160,0.0), var(--sea) 60%, #04243a 100%); transition: height 1.2s cubic-bezier(.4,0,.2,1); border-top: 2px solid var(--foam); }
-      .water::before { content:""; position:absolute; top:-2px; left:0; right:0; height:2px; background: var(--foam); filter: blur(2px); opacity:.7; }
-      .ship { position: absolute; left: 50%; transform: translateX(-50%); font-size: 40px; transition: bottom 1.2s cubic-bezier(.4,0,.2,1); z-index: 2; filter: drop-shadow(0 2px 6px rgba(0,0,0,.6)); }
-      .drownlabel { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; z-index: 4; font-size: 13px; color: var(--foam); }
-      .drownlabel b { font-family: "Anton", sans-serif; font-size: 26px; display: block; }
+      .gauge { min-height: 320px; background: linear-gradient(180deg, #100b03 0%, var(--pitch) 100%); }
+      .gaugehead { position: absolute; top: 12px; left: 14px; right: 14px; z-index: 3; display: flex; justify-content: space-between; font-family: "Cinzel", serif; font-size: 10px; color: var(--gold-deep); text-transform: uppercase; letter-spacing: 0.16em; }
+      .water { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, rgba(245,197,24,0.0), rgba(184,134,11,0.28) 55%, rgba(120,82,8,0.5) 100%); transition: height 1.2s cubic-bezier(.4,0,.2,1); border-top: 2px solid var(--gold); }
+      .water::before { content:""; position:absolute; top:-3px; left:0; right:0; height:3px; background: var(--gold); filter: blur(3px); opacity:.7; }
+      .ship { position: absolute; left: 50%; transform: translateX(-50%); font-size: 40px; transition: bottom 1.2s cubic-bezier(.4,0,.2,1); z-index: 2; filter: drop-shadow(0 2px 8px rgba(0,0,0,.7)); }
+      .drownlabel { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; z-index: 4; font-size: 12px; color: var(--gold); }
+      .drownlabel b { font-family: "Cinzel", serif; font-weight: 900; font-size: 26px; display: block; }
 
       .grid3 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
       @media (max-width: 820px) { .grid3 { grid-template-columns: repeat(2,1fr); } }
-      .stat { border: 1px solid rgba(127,212,255,0.12); border-radius: 12px; padding: 16px; background: rgba(6,22,38,0.4); }
-      .stat .k { color: var(--mute); font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; }
-      .stat .v { font-family: "Anton", sans-serif; font-size: 30px; margin-top: 6px; letter-spacing: 0.02em; }
-      .stat .v.warn { color: var(--warn); }
+      .stat { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: rgba(245,197,24,0.03); }
+      .stat .k { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; }
+      .stat .v { font-family: "Cinzel", serif; font-weight: 700; font-size: 28px; margin-top: 8px; color: var(--parch); }
+      .stat .v.warn { color: var(--gold); }
       .stat .v.bleed { color: var(--blood); }
-      .stat .sub { color: var(--mute); font-size: 11px; margin-top: 2px; }
+      .stat .v.profit { color: var(--profit); }
+      .stat .sub { color: var(--mute); font-size: 11px; margin-top: 3px; }
 
-      .empty { text-align: center; padding: 80px 20px; color: var(--mute); }
-      .empty .big { font-family: "Anton", sans-serif; font-size: 40px; color: var(--foam); letter-spacing: 0.04em; }
+      .empty { text-align: center; padding: 76px 20px; grid-column: 1 / -1; }
+      .empty .big { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(28px, 5vw, 44px); color: var(--gold); letter-spacing: 0.05em; text-transform: uppercase; }
+      .empty p { font-family: "EB Garamond", serif; font-style: italic; font-size: 17px; color: var(--mute); margin-top: 12px; max-width: 520px; margin-left: auto; margin-right: auto; }
 
-      footer { margin-top: 40px; color: var(--mute); font-size: 11px; border-top: 1px solid rgba(127,212,255,0.1); padding-top: 14px; line-height: 1.7; }
-      footer b { color: var(--ink); }
+      footer { margin-top: 42px; color: var(--mute); font-size: 12px; border-top: 1px solid var(--line); padding-top: 16px; line-height: 1.75; }
+      footer b { color: var(--gold-deep); font-family: "Cinzel", serif; font-weight: 700; }
+      .fable { font-family: "EB Garamond", serif; font-style: italic; color: var(--gold-deep); }
     </style>
   </head>
   <body>
     <div class="wrap">
       <header>
-        <div class="brand">PERMANENT <span>UNDERPOD</span></div>
-        <div class="tag">
-          <span id="livedot" class="dot"></span><span id="livetxt">connecting…</span><br />
-          an AI rolled a perp. the keys live in a vault it can't withdraw from.
-          we just watch it drown.
+        <div class="logo" title="Permanent Underpod">
+          <svg viewBox="0 0 64 48" aria-hidden="true">
+            <g fill="#f5c518">
+              <rect x="4" y="13" width="56" height="14" rx="5" />
+              <rect x="3" y="21" width="13" height="17" rx="4" />
+              <rect x="48" y="21" width="13" height="17" rx="4" />
+              <rect x="17" y="25" width="13" height="10" rx="2" />
+              <rect x="34" y="25" width="13" height="10" rx="2" />
+              <rect x="8" y="38" width="5" height="6" rx="1" />
+              <rect x="51" y="38" width="5" height="6" rx="1" />
+            </g>
+          </svg>
+        </div>
+        <div class="titles">
+          <div class="brand">Permanent Underpod</div>
+          <div class="sub">the live drowning — a position, tracked unto its grave</div>
+        </div>
+        <div class="live">
+          <span id="livedot" class="dot"></span><span id="livetxt">lighting the candles…</span>
         </div>
       </header>
 
       <div id="roll" class="roll"></div>
-
       <main id="stage"></main>
 
       <footer>
-        <b>How this works.</b> A random asset / direction / leverage was rolled live on the show and opened on
-        Hyperliquid. The trading key is held by <b>sigil</b> — it can place orders but
-        <b>physically cannot withdraw funds</b>. This board is read-only; it polls Hyperliquid every few seconds.
-        Not advice. Obviously.
+        <b>The rite.</b> A random asset, side, and leverage were rolled live on the show and cast upon Hyperliquid.
+        The trading key is kept by <b>sigil</b> — it may place orders but <b>cannot withdraw a single coin</b>.
+        So an AI was handed the keys, and still it cannot flee with the purse. This board is read-only; it gazes at
+        Hyperliquid every few seconds and reports what it sees. <span class="fable">Not advice. Obviously.</span>
       </footer>
     </div>
 
@@ -134,7 +160,7 @@
 
       function sparkline(svg, pts) {
         if (!pts.length) { svg.innerHTML = ""; return; }
-        const W = svg.clientWidth || 600, H = 90, pad = 4;
+        const W = svg.clientWidth || 600, H = 88, pad = 4;
         const xs = pts.map((p) => p.ts), ys = pts.map((p) => p.pnl);
         const x0 = Math.min(...xs), x1 = Math.max(...xs);
         const y0 = Math.min(0, ...ys), y1 = Math.max(0, ...ys);
@@ -142,62 +168,71 @@
         const sy = (y) => H - pad - ((y - y0) / Math.max(1e-9, y1 - y0)) * (H - 2 * pad);
         const d = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.ts).toFixed(1)} ${sy(p.pnl).toFixed(1)}`).join(" ");
         const up = ys[ys.length - 1] >= 0;
-        const col = up ? "#36f5a0" : "#ff4d6d";
+        const col = up ? "#74e6a0" : "#e2384c";
         const zeroY = sy(0).toFixed(1);
         svg.innerHTML =
           `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-             <stop offset="0" stop-color="${col}" stop-opacity="0.32"/>
+             <stop offset="0" stop-color="${col}" stop-opacity="0.3"/>
              <stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
-           <line x1="0" y1="${zeroY}" x2="${W}" y2="${zeroY}" stroke="#5b7a92" stroke-dasharray="3 4" stroke-width="1"/>
+           <line x1="0" y1="${zeroY}" x2="${W}" y2="${zeroY}" stroke="#6b5618" stroke-dasharray="3 4" stroke-width="1"/>
            <path d="${d} L ${sx(x1).toFixed(1)} ${zeroY} L ${sx(x0).toFixed(1)} ${zeroY} Z" fill="url(#g)"/>
            <path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
+      }
+
+      function renderStandby() {
+        $("roll").innerHTML = "";
+        $("stage").innerHTML = `
+          <div class="empty">
+            <div class="big">The dice are uncast</div>
+            <p>No position has been armed. The moment the roll lands on Hyperliquid, the descent begins — and this board lights up.</p>
+          </div>`;
       }
 
       function renderEmpty(state) {
         $("roll").innerHTML = "";
         $("stage").innerHTML = `
-          <div class="empty" style="grid-column:1/-1">
-            <div class="big">NO POSITION OPEN</div>
-            <p style="margin-top:10px">The dice haven't been rolled yet — or the last one already hit the seabed.</p>
-            <p style="margin-top:6px">Account value: <b>${fmtUsd(state.accountValue || 0)}</b></p>
+          <div class="empty">
+            <div class="big">No position open</div>
+            <p>The dice haven't been rolled yet — or the last fable already reached its end.</p>
+            <p style="font-style:normal;font-family:'JetBrains Mono',monospace;font-size:13px">The purse: <b style="color:var(--gold)">${fmtUsd(state.accountValue || 0)}</b></p>
           </div>`;
       }
 
       async function render(p, state) {
         const pnlUp = p.unrealizedPnl >= 0;
         const sideCls = p.side === "LONG" ? "side-long" : "side-short";
+        const px = (v) => fmtUsd(v, v < 10 ? 4 : 2);
         $("roll").innerHTML =
-          `THE ROLL → <span class="${sideCls}">${p.side} ${p.coin}</span> · ${p.leverage}×
-           <small>entry ${fmtUsd(p.entryPx, p.entryPx < 10 ? 4 : 2)} · mark ${fmtUsd(p.markPx, p.markPx < 10 ? 4 : 2)} · size ${p.size.toLocaleString()} · notional ${fmtUsd(p.notional, 0)}</small>`;
+          `<span class="lead">The roll →</span> <span class="${sideCls}">${p.side} ${p.coin}</span> · ${p.leverage}×
+           <small>entry ${px(p.entryPx)} · mark ${px(p.markPx)} · size ${p.size.toLocaleString()} · notional ${fmtUsd(p.notional, 0)}</small>`;
 
         const drown = Math.round(p.drownPct);
+        const dead = drown >= 96;
         const fundBleed = p.fundingHourly < 0;
 
         $("stage").innerHTML = `
-          <div class="pnlcard">
-            <div class="pnllabel">Unrealized PnL</div>
+          <div class="card pnlcard">
+            <div class="pnllabel">Unrealized fortune</div>
             <div class="pnl ${pnlUp ? "up" : "down"}">${pnlUp ? "+" : "−"}${fmtUsd(Math.abs(p.unrealizedPnl)).slice(1)}</div>
-            <div class="roi ${pnlUp ? "up" : "down"}" style="color:${pnlUp ? "var(--sonar)" : "var(--blood)"}">
-              ${pnlUp ? "+" : ""}${p.roiPct.toFixed(1)}% on margin
-            </div>
+            <div class="roi" style="color:${pnlUp ? "var(--profit)" : "var(--blood)"}">${pnlUp ? "+" : ""}${p.roiPct.toFixed(1)}% upon the margin staked</div>
             <svg class="spark" id="spark"></svg>
           </div>
-          <div class="gauge">
-            <div class="gaugehead"><span>surface · entry</span><span>seabed · liquidation</span></div>
+          <div class="card gauge">
+            <div class="gaugehead"><span>the surface · entry</span><span>the grave · liquidation</span></div>
             <div class="water" id="water" style="height:${drown}%"></div>
-            <div class="ship" id="ship" style="bottom:calc(${drown}% - 6px)">${drown >= 96 ? "🪦" : "🚢"}</div>
+            <div class="ship" id="ship" style="bottom:calc(${drown}% - 6px)">${dead ? "⚰️" : "🚢"}</div>
             <div class="drownlabel">
-              <b>${drown}%</b> sunk
-              ${p.distToLiqPct === null ? "" : `· ${p.distToLiqPct.toFixed(2)}% from liquidation`}
+              <b>${drown}%</b> ${dead ? "— a fable that ended too soon" : "sunk"}
+              ${p.distToLiqPct === null || dead ? "" : `· ${p.distToLiqPct.toFixed(2)}% from the grave`}
             </div>
           </div>`;
 
         $("stage").insertAdjacentHTML("beforeend", `
           <div class="grid3">
-            <div class="stat"><div class="k">Time alive</div><div class="v">${fmtAge(p.ageMs)}</div><div class="sub">since the roll</div></div>
-            <div class="stat"><div class="k">Liq price</div><div class="v warn">${p.liqPx ? fmtUsd(p.liqPx, p.liqPx < 10 ? 4 : 2) : "—"}</div><div class="sub">the seabed</div></div>
-            <div class="stat"><div class="k">Funding ${fundBleed ? "bleed" : "earn"} /hr</div><div class="v ${fundBleed ? "bleed" : ""}">${fundBleed ? "−" : "+"}${fmtUsd(Math.abs(p.fundingHourly)).slice(1)}</div><div class="sub">paid so far ${p.fundingPaid >= 0 ? "+" : "−"}${fmtUsd(Math.abs(p.fundingPaid)).slice(1)}</div></div>
-            <div class="stat"><div class="k">Account value</div><div class="v">${fmtUsd(state.accountValue)}</div><div class="sub">margin ${fmtUsd(p.marginUsed, 0)}</div></div>
+            <div class="stat"><div class="k">Time afloat</div><div class="v">${fmtAge(p.ageMs)}</div><div class="sub">since the roll</div></div>
+            <div class="stat"><div class="k">The grave</div><div class="v warn">${p.liqPx ? px(p.liqPx) : "—"}</div><div class="sub">liquidation price</div></div>
+            <div class="stat"><div class="k">The ${fundBleed ? "bleed" : "tithe"} /hr</div><div class="v ${fundBleed ? "bleed" : "profit"}">${fundBleed ? "−" : "+"}${fmtUsd(Math.abs(p.fundingHourly)).slice(1)}</div><div class="sub">funding, paid so far ${p.fundingPaid >= 0 ? "+" : "−"}${fmtUsd(Math.abs(p.fundingPaid)).slice(1)}</div></div>
+            <div class="stat"><div class="k">The purse</div><div class="v">${fmtUsd(state.accountValue)}</div><div class="sub">margin ${fmtUsd(p.marginUsed, 0)}</div></div>
           </div>`);
 
         try {
@@ -209,6 +244,11 @@
       async function tick() {
         try {
           const state = await (await fetch("/api/state")).json();
+          if (!state.wallet) {
+            $("livedot").className = "dot standby";
+            $("livetxt").textContent = "standing by — no wallet armed";
+            return renderStandby();
+          }
           const stale = state.stale;
           $("livedot").className = "dot" + (stale ? " stale" : "");
           $("livetxt").textContent = stale ? "stale — reconnecting" : "live";
@@ -216,7 +256,7 @@
           else renderEmpty(state);
         } catch {
           $("livedot").className = "dot stale";
-          $("livetxt").textContent = "offline";
+          $("livetxt").textContent = "the candles went out";
         }
       }
       tick();
