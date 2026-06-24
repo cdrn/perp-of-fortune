@@ -84,13 +84,18 @@
       .chartcap { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; margin-top: 20px; }
       .spark { width: 100%; height: 136px; margin-top: 6px; display: block; }
 
-      .gauge { min-height: 320px; background: linear-gradient(180deg, #100b03 0%, var(--pitch) 100%); }
-      .gaugehead { position: absolute; top: 12px; left: 14px; right: 14px; z-index: 3; display: flex; justify-content: space-between; font-family: "Cinzel", serif; font-size: 10px; color: var(--gold-deep); text-transform: uppercase; letter-spacing: 0.16em; }
-      .water { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, rgba(245,197,24,0.0), rgba(184,134,11,0.28) 55%, rgba(120,82,8,0.5) 100%); transition: height 1.2s cubic-bezier(.4,0,.2,1); border-top: 2px solid var(--gold); }
-      .water::before { content:""; position:absolute; top:-3px; left:0; right:0; height:3px; background: var(--gold); filter: blur(3px); opacity:.7; }
-      .ship { position: absolute; left: 50%; transform: translateX(-50%); font-size: 40px; transition: bottom 1.2s cubic-bezier(.4,0,.2,1); z-index: 2; filter: drop-shadow(0 2px 8px rgba(0,0,0,.7)); }
-      .drownlabel { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; z-index: 4; font-size: 12px; color: var(--gold); }
-      .drownlabel b { font-family: "Cinzel", serif; font-weight: 900; font-size: 26px; display: block; }
+      /* depth gauge: ship sinks from the surface (entry) toward the seabed (liquidation) */
+      .gauge { min-height: 340px; background: linear-gradient(180deg, #0b1a24 0%, #06121b 45%, var(--pitch) 100%); }
+      .surfaceline, .seabedline { position: absolute; left: 0; right: 0; height: 0; z-index: 2; }
+      .surfaceline { top: 11%; border-top: 2px solid var(--gold); box-shadow: 0 0 12px rgba(245,197,24,0.35); }
+      .seabedline { top: 86%; border-top: 2px dashed var(--blood); }
+      .surfaceline span, .seabedline span { position: absolute; left: 12px; font-family: "Cinzel", serif; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
+      .surfaceline span { top: -15px; color: var(--gold-deep); }
+      .seabedline span { top: 5px; color: var(--blood); }
+      .abyss { position: absolute; left: 0; right: 0; top: 86%; bottom: 0; background: linear-gradient(180deg, rgba(226,56,76,0.18), rgba(226,56,76,0.02)); z-index: 1; }
+      .ship { position: absolute; left: 50%; transform: translateX(-50%); font-size: 40px; transition: top 1.2s cubic-bezier(.4,0,.2,1); z-index: 3; filter: drop-shadow(0 3px 8px rgba(0,0,0,.7)); }
+      .drownreadout { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; z-index: 4; font-size: 12px; color: var(--gold); }
+      .drownreadout b { font-family: "Cinzel", serif; font-weight: 900; font-size: 28px; display: block; }
 
       .grid3 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
       @media (max-width: 820px) { .grid3 { grid-template-columns: repeat(2,1fr); } }
@@ -216,67 +221,110 @@
            <path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
       }
 
+      // Build the DOM once per mode and UPDATE values in place each tick — never
+      // rebuild innerHTML on a refresh (that's what made the chart flicker and
+      // killed the ship's animation). Atomic SVG swap + cached history = no flash.
+      let mode = null, builtCoin = null;
+      let histCache = null, histCoin = null, histAt = 0;
+
       function renderStandby() {
+        if (mode === "standby") return;
+        mode = "standby"; builtCoin = null;
         $("roll").innerHTML = "";
-        $("stage").innerHTML = `
-          <div class="empty">
-            <div class="big">The dice are uncast</div>
-            <p>No position has been armed. The moment the roll lands on Hyperliquid, the descent begins — and this board lights up.</p>
-          </div>`;
+        $("stage").innerHTML =
+          `<div class="empty"><div class="big">The dice are uncast</div>
+           <p>No position has been armed. The moment the roll lands on Hyperliquid, the descent begins — and this board lights up.</p></div>`;
       }
 
       function renderEmpty(state) {
-        $("roll").innerHTML = "";
+        if (mode !== "empty") {
+          mode = "empty"; builtCoin = null;
+          $("roll").innerHTML = "";
+          $("stage").innerHTML =
+            `<div class="empty"><div class="big">No position open</div>
+             <p>The dice haven't been rolled yet — or the last fable already reached its end.</p>
+             <p style="font-style:normal;font-family:'JetBrains Mono',monospace;font-size:13px">The purse: <b id="emptypurse" style="color:var(--gold)"></b></p></div>`;
+        }
+        $("emptypurse").textContent = fmtUsd(state.accountValue || 0);
+      }
+
+      function buildPosition() {
         $("stage").innerHTML = `
-          <div class="empty">
-            <div class="big">No position open</div>
-            <p>The dice haven't been rolled yet — or the last fable already reached its end.</p>
-            <p style="font-style:normal;font-family:'JetBrains Mono',monospace;font-size:13px">The purse: <b style="color:var(--gold)">${fmtUsd(state.accountValue || 0)}</b></p>
+          <div class="card pnlcard">
+            <div class="pnllabel">Unrealized fortune</div>
+            <div class="pnl" id="pnl">—</div>
+            <div class="roi" id="roi"></div>
+            <div class="chartcap">mark price · the descent toward the grave</div>
+            <svg class="spark" id="spark"></svg>
+          </div>
+          <div class="card gauge">
+            <div class="surfaceline"><span id="surfacelbl"></span></div>
+            <div class="seabedline"><span id="seabedlbl"></span></div>
+            <div class="abyss"></div>
+            <div class="ship" id="ship">🚢</div>
+            <div class="drownreadout" id="drownreadout"></div>
+          </div>
+          <div class="grid3">
+            <div class="stat"><div class="k">Time afloat</div><div class="v" id="s_age"></div><div class="sub">since the roll</div></div>
+            <div class="stat"><div class="k">The grave</div><div class="v warn" id="s_liq"></div><div class="sub">liquidation price</div></div>
+            <div class="stat"><div class="k" id="s_fundk"></div><div class="v" id="s_fund"></div><div class="sub" id="s_fundsub"></div></div>
+            <div class="stat"><div class="k">The purse</div><div class="v" id="s_purse"></div><div class="sub" id="s_marg"></div></div>
           </div>`;
       }
 
       async function render(p, state) {
-        const pnlUp = p.unrealizedPnl >= 0;
-        const sideCls = p.side === "LONG" ? "side-long" : "side-short";
         const px = (v) => fmtUsd(v, v < 10 ? 4 : 2);
+        const pnlUp = p.unrealizedPnl >= 0;
+        if (mode !== "position" || builtCoin !== p.coin) {
+          mode = "position"; builtCoin = p.coin; buildPosition();
+        }
+
+        const sideCls = p.side === "LONG" ? "side-long" : "side-short";
         $("roll").innerHTML =
-          `<span class="lead">The roll →</span> <span class="${sideCls}">${p.side} ${p.coin}</span> · ${p.leverage}×
-           <small>entry ${px(p.entryPx)} · mark ${px(p.markPx)} · size ${p.size.toLocaleString()} · notional ${fmtUsd(p.notional, 0)}</small>`;
+          `<span class="lead">The roll →</span> <span class="${sideCls}">${p.side} ${p.coin}</span> · ${p.leverage}×` +
+          `<small>entry ${px(p.entryPx)} · mark ${px(p.markPx)} · size ${p.size.toLocaleString()} · notional ${fmtUsd(p.notional, 0)}</small>`;
 
         const drown = Math.round(p.drownPct);
         const dead = drown >= 96;
         const fundBleed = p.fundingHourly < 0;
 
-        $("stage").innerHTML = `
-          <div class="card pnlcard">
-            <div class="pnllabel">Unrealized fortune</div>
-            <div class="pnl ${pnlUp ? "up" : "down"}">${pnlUp ? "+" : "−"}${fmtUsd(Math.abs(p.unrealizedPnl)).slice(1)}</div>
-            <div class="roi" style="color:${pnlUp ? "var(--profit)" : "var(--blood)"}">${pnlUp ? "+" : ""}${p.roiPct.toFixed(1)}% upon the margin staked</div>
-            <div class="chartcap">mark price · the descent toward the grave</div>
-            <svg class="spark" id="spark"></svg>
-          </div>
-          <div class="card gauge">
-            <div class="gaugehead"><span>the surface · entry</span><span>the grave · liquidation</span></div>
-            <div class="water" id="water" style="height:${drown}%"></div>
-            <div class="ship" id="ship" style="bottom:calc(${drown}% - 6px)">${dead ? "⚰️" : "🚢"}</div>
-            <div class="drownlabel">
-              <b>${drown}%</b> ${dead ? "— a fable that ended too soon" : "sunk"}
-              ${p.distToLiqPct === null || dead ? "" : `· ${p.distToLiqPct.toFixed(2)}% from the grave`}
-            </div>
-          </div>`;
+        const pnl = $("pnl");
+        pnl.className = "pnl " + (pnlUp ? "up" : "down");
+        pnl.textContent = (pnlUp ? "+" : "−") + fmtUsd(Math.abs(p.unrealizedPnl)).slice(1);
+        const roi = $("roi");
+        roi.style.color = pnlUp ? "var(--profit)" : "var(--blood)";
+        roi.textContent = `${pnlUp ? "+" : ""}${p.roiPct.toFixed(1)}% upon the margin staked`;
 
-        $("stage").insertAdjacentHTML("beforeend", `
-          <div class="grid3">
-            <div class="stat"><div class="k">Time afloat</div><div class="v">${fmtAge(p.ageMs)}</div><div class="sub">since the roll</div></div>
-            <div class="stat"><div class="k">The grave</div><div class="v warn">${p.liqPx ? px(p.liqPx) : "—"}</div><div class="sub">liquidation price</div></div>
-            <div class="stat"><div class="k">The ${fundBleed ? "bleed" : "tithe"} /hr</div><div class="v ${fundBleed ? "bleed" : "profit"}">${fundBleed ? "−" : "+"}${fmtUsd(Math.abs(p.fundingHourly)).slice(1)}</div><div class="sub">funding, paid so far ${p.fundingPaid >= 0 ? "+" : "−"}${fmtUsd(Math.abs(p.fundingPaid)).slice(1)}</div></div>
-            <div class="stat"><div class="k">The purse</div><div class="v">${fmtUsd(state.accountValue)}</div><div class="sub">margin ${fmtUsd(p.marginUsed, 0)}</div></div>
-          </div>`);
+        // gauge: ship sinks from surface (11%) toward seabed (86%) as drown rises
+        $("surfacelbl").textContent = `⌁ surface · entry ${px(p.entryPx)}`;
+        $("seabedlbl").textContent = `⚰ seabed · liquidation ${p.liqPx ? px(p.liqPx) : "—"}`;
+        const ship = $("ship");
+        ship.style.top = `calc(11% + ${(drown * 0.75).toFixed(1)}%)`;
+        ship.textContent = dead ? "⚰️" : "🚢";
+        $("drownreadout").innerHTML =
+          `<b>${drown}%</b> sunk` +
+          (dead ? " — a fable that ended too soon"
+                : (p.distToLiqPct != null ? ` · ${p.distToLiqPct.toFixed(1)}% from the grave` : ""));
 
+        $("s_age").textContent = fmtAge(p.ageMs);
+        $("s_liq").textContent = p.liqPx ? px(p.liqPx) : "—";
+        $("s_fundk").textContent = `The ${fundBleed ? "bleed" : "tithe"} /hr`;
+        const fund = $("s_fund");
+        fund.className = "v " + (fundBleed ? "bleed" : "profit");
+        fund.textContent = `${fundBleed ? "−" : "+"}${fmtUsd(Math.abs(p.fundingHourly)).slice(1)}`;
+        $("s_fundsub").textContent = `funding, paid so far ${p.fundingPaid >= 0 ? "+" : "−"}${fmtUsd(Math.abs(p.fundingPaid)).slice(1)}`;
+        $("s_purse").textContent = fmtUsd(state.accountValue);
+        $("s_marg").textContent = `margin ${fmtUsd(p.marginUsed, 0)}`;
+
+        // chart: persisted <svg>, atomic redraw; refetch the 72h history at most
+        // every 20s, just append the live mark in between — no blank flash.
         try {
-          const hist = await (await fetch(`/api/history?coin=${encodeURIComponent(p.coin)}&hours=72`)).json();
-          const pts = hist.map((h) => ({ ts: h.ts, mark: h.mark })).filter((h) => h.mark > 0);
-          // include the live mark so the line reaches "now" between snapshots
+          const now = Date.now();
+          if (!histCache || histCoin !== p.coin || now - histAt > 20000) {
+            histCache = await (await fetch(`/api/history?coin=${encodeURIComponent(p.coin)}&hours=72`)).json();
+            histCoin = p.coin; histAt = now;
+          }
+          const pts = histCache.map((h) => ({ ts: h.ts, mark: h.mark })).filter((h) => h.mark > 0);
           pts.push({ ts: Date.now(), mark: p.markPx });
           pricechart($("spark"), pts, p.entryPx, p.liqPx, p.side, pnlUp);
         } catch {}
