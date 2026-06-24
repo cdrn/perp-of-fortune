@@ -81,7 +81,8 @@
       .pnl.up { color: var(--profit); text-shadow: 0 0 30px rgba(116,230,160,0.35); }
       .pnl.down { color: var(--blood); text-shadow: 0 0 30px rgba(226,56,76,0.4); }
       .roi { font-size: 17px; margin-top: 4px; }
-      .spark { width: 100%; height: 88px; margin-top: 14px; display: block; }
+      .chartcap { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; margin-top: 20px; }
+      .spark { width: 100%; height: 136px; margin-top: 6px; display: block; }
 
       .gauge { min-height: 320px; background: linear-gradient(180deg, #100b03 0%, var(--pitch) 100%); }
       .gaugehead { position: absolute; top: 12px; left: 14px; right: 14px; z-index: 3; display: flex; justify-content: space-between; font-family: "Cinzel", serif; font-size: 10px; color: var(--gold-deep); text-transform: uppercase; letter-spacing: 0.16em; }
@@ -160,24 +161,50 @@
         return `${m}m ${s % 60}s`;
       };
 
-      function sparkline(svg, pts) {
+      const pxFmt = (v) => fmtUsd(v, v < 10 ? 4 : 2);
+      const esc = (s) => String(s);
+
+      // Mark-price chart with the entry line and the liquidation "bar" — a red
+      // danger zone the price drifts toward. The whole point of the show.
+      function pricechart(svg, pts, entry, liq, side, pnlUp) {
         if (!pts.length) { svg.innerHTML = ""; return; }
-        const W = svg.clientWidth || 600, H = 88, pad = 4;
-        const xs = pts.map((p) => p.ts), ys = pts.map((p) => p.pnl);
+        const W = svg.clientWidth || 600, H = 136, padX = 1, padT = 10, padB = 10;
+        const xs = pts.map((p) => p.ts), ms = pts.map((p) => p.mark);
         const x0 = Math.min(...xs), x1 = Math.max(...xs);
-        const y0 = Math.min(0, ...ys), y1 = Math.max(0, ...ys);
-        const sx = (x) => pad + ((x - x0) / Math.max(1, x1 - x0)) * (W - 2 * pad);
-        const sy = (y) => H - pad - ((y - y0) / Math.max(1e-9, y1 - y0)) * (H - 2 * pad);
-        const d = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.ts).toFixed(1)} ${sy(p.pnl).toFixed(1)}`).join(" ");
-        const up = ys[ys.length - 1] >= 0;
-        const col = up ? "#74e6a0" : "#e2384c";
-        const zeroY = sy(0).toFixed(1);
+        // y-range spans the price path, the entry, and the liq line so the
+        // distance-to-grave is always legible.
+        const vals = [...ms, entry];
+        if (liq) vals.push(liq);
+        let lo = Math.min(...vals), hi = Math.max(...vals);
+        const padY = (hi - lo) * 0.12 || (hi * 0.01) || 1;
+        lo -= padY; hi += padY;
+        const sx = (x) => padX + ((x - x0) / Math.max(1, x1 - x0)) * (W - 2 * padX);
+        const sy = (v) => padT + (1 - (v - lo) / Math.max(1e-9, hi - lo)) * (H - padT - padB);
+        const col = pnlUp ? "#74e6a0" : "#e2384c";
+        const d = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.ts).toFixed(1)} ${sy(p.mark).toFixed(1)}`).join(" ");
+
+        let layers = "";
+        if (liq) {
+          const liqY = sy(liq);
+          // danger zone: the abyss past the liq line (below for longs, above for shorts)
+          const zoneY = side === "LONG" ? liqY : 0;
+          const zoneH = Math.max(0, side === "LONG" ? H - liqY : liqY);
+          layers +=
+            `<rect x="0" y="${zoneY.toFixed(1)}" width="${W}" height="${zoneH.toFixed(1)}" fill="rgba(226,56,76,0.13)"/>
+             <line x1="0" y1="${liqY.toFixed(1)}" x2="${W}" y2="${liqY.toFixed(1)}" stroke="#e2384c" stroke-width="1.5" stroke-dasharray="5 3"/>
+             <text x="7" y="${(liqY + (side === "LONG" ? 12 : -5)).toFixed(1)}" fill="#e2384c" font-size="9" font-family="JetBrains Mono" letter-spacing="0.5">⚰ LIQUIDATION ${esc(pxFmt(liq))}</text>`;
+        }
+        const entryY = sy(entry);
+        layers +=
+          `<line x1="0" y1="${entryY.toFixed(1)}" x2="${W}" y2="${entryY.toFixed(1)}" stroke="#b8860b" stroke-width="1" stroke-dasharray="3 4" opacity="0.8"/>
+           <text x="7" y="${(entryY - 5).toFixed(1)}" fill="#b8860b" font-size="9" font-family="JetBrains Mono" letter-spacing="0.5">ENTRY ${esc(pxFmt(entry))}</text>`;
+
         svg.innerHTML =
-          `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-             <stop offset="0" stop-color="${col}" stop-opacity="0.3"/>
+          `<defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+             <stop offset="0" stop-color="${col}" stop-opacity="0.28"/>
              <stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
-           <line x1="0" y1="${zeroY}" x2="${W}" y2="${zeroY}" stroke="#6b5618" stroke-dasharray="3 4" stroke-width="1"/>
-           <path d="${d} L ${sx(x1).toFixed(1)} ${zeroY} L ${sx(x0).toFixed(1)} ${zeroY} Z" fill="url(#g)"/>
+           ${layers}
+           <path d="${d} L ${sx(x1).toFixed(1)} ${(H - padB).toFixed(1)} L ${sx(x0).toFixed(1)} ${(H - padB).toFixed(1)} Z" fill="url(#pg)"/>
            <path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
       }
 
@@ -217,6 +244,7 @@
             <div class="pnllabel">Unrealized fortune</div>
             <div class="pnl ${pnlUp ? "up" : "down"}">${pnlUp ? "+" : "−"}${fmtUsd(Math.abs(p.unrealizedPnl)).slice(1)}</div>
             <div class="roi" style="color:${pnlUp ? "var(--profit)" : "var(--blood)"}">${pnlUp ? "+" : ""}${p.roiPct.toFixed(1)}% upon the margin staked</div>
+            <div class="chartcap">mark price · the descent toward the grave</div>
             <svg class="spark" id="spark"></svg>
           </div>
           <div class="card gauge">
@@ -239,7 +267,10 @@
 
         try {
           const hist = await (await fetch(`/api/history?coin=${encodeURIComponent(p.coin)}&hours=72`)).json();
-          sparkline($("spark"), hist.map((h) => ({ ts: h.ts, pnl: h.pnl })));
+          const pts = hist.map((h) => ({ ts: h.ts, mark: h.mark })).filter((h) => h.mark > 0);
+          // include the live mark so the line reaches "now" between snapshots
+          pts.push({ ts: Date.now(), mark: p.markPx });
+          pricechart($("spark"), pts, p.entryPx, p.liqPx, p.side, pnlUp);
         } catch {}
       }
 

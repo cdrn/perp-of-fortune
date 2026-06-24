@@ -51,13 +51,18 @@ function derive(
 
   const distToLiqPct =
     liqPx && mark > 0 ? (Math.abs(mark - liqPx) / mark) * 100 : null;
-  // At open, an isolated Nx position sits ~ (100/N)% away from liquidation.
-  // Map that opening cushion → 0% drowned, liquidation → 100% drowned.
-  const openingCushion = 100 / Math.max(leverage, 1);
-  const drownPct =
-    distToLiqPct === null
-      ? 0
-      : Math.max(0, Math.min(100, (1 - distToLiqPct / openingCushion) * 100));
+  // Drowning = how far the mark has travelled from entry toward liquidation.
+  // The cushion is the real entry→liq price distance (constant for the life of
+  // the position), so a fresh position sits at ~0% and the seabed (liq) is 100%.
+  // In profit, the mark is on the safe side of entry → 0% (ship at the surface).
+  let drownPct = 0;
+  if (liqPx && entryPx > 0) {
+    const cushion = Math.abs(entryPx - liqPx);
+    const lossDist = side === "LONG" ? entryPx - mark : mark - entryPx; // >0 = losing
+    if (cushion > 0) {
+      drownPct = Math.max(0, Math.min(100, (lossDist / cushion) * 100));
+    }
+  }
 
   // HL funding is hourly; positive rate => longs pay shorts.
   const fundingHourly =

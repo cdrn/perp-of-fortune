@@ -23,6 +23,7 @@ import {
 } from "./hllib.js";
 
 const STASH = join(tmpdir(), "underpod-hl-pending.json");
+const TD_FILE = join(tmpdir(), "underpod-hl-typeddata.json");
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -47,6 +48,7 @@ function roll(): void {
 function emitTypedData(label: string, action: unknown, nonce: number): void {
   const td = agentTypedData(action, nonce, null);
   writeFileSync(STASH, JSON.stringify({ label, action, nonce, vaultAddress: null }, null, 2));
+  writeFileSync(TD_FILE, JSON.stringify(td)); // exact object to hand to sigil
   console.log(`\n  [${NET}] prepared: ${label}`);
   console.log(`  stashed action+nonce → ${STASH}\n`);
   console.log(`  ── hand this to sigil_eth_sign_typed_data (portal = the trading key) ──\n`);
