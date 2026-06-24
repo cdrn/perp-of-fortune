@@ -71,31 +71,23 @@
       .roll .side-short { color: var(--blood); }
       .roll small { font-family: "JetBrains Mono", monospace; font-weight: 400; font-size: 13px; color: var(--mute); letter-spacing: 0; text-transform: none; display: block; margin-top: 6px; }
 
-      .stage { display: grid; grid-template-columns: 1.6fr 1fr; gap: 22px; margin-top: 16px; }
-      @media (max-width: 820px) { .stage { grid-template-columns: 1fr; } }
+      .stage { display: flex; flex-direction: column; gap: 22px; margin-top: 16px; }
 
       .card { position: relative; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, rgba(245,197,24,0.05), rgba(4,4,3,0.5)); overflow: hidden; }
-      .pnlcard { padding: 26px 24px; }
+      .chartcard { padding: 24px 24px 20px; }
+      .pnlrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
       .pnllabel { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 12px; text-transform: uppercase; letter-spacing: 0.22em; }
-      .pnl { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(50px, 10vw, 108px); line-height: 0.95; margin-top: 8px; transition: color .4s; }
+      .pnl { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(44px, 8vw, 92px); line-height: 0.95; margin-top: 8px; transition: color .4s; }
       .pnl.up { color: var(--profit); text-shadow: 0 0 30px rgba(116,230,160,0.35); }
       .pnl.down { color: var(--blood); text-shadow: 0 0 30px rgba(226,56,76,0.4); }
       .roi { font-size: 17px; margin-top: 4px; }
-      .chartcap { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; margin-top: 20px; }
-      .spark { width: 100%; height: 136px; margin-top: 6px; display: block; }
-
-      /* depth gauge: ship sinks from the surface (entry) toward the seabed (liquidation) */
-      .gauge { min-height: 340px; background: linear-gradient(180deg, #0b1a24 0%, #06121b 45%, var(--pitch) 100%); }
-      .surfaceline, .seabedline { position: absolute; left: 0; right: 0; height: 0; z-index: 2; }
-      .surfaceline { top: 11%; border-top: 2px solid var(--gold); box-shadow: 0 0 12px rgba(245,197,24,0.35); }
-      .seabedline { top: 86%; border-top: 2px dashed var(--blood); }
-      .surfaceline span, .seabedline span { position: absolute; left: 12px; font-family: "Cinzel", serif; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
-      .surfaceline span { top: -15px; color: var(--gold-deep); }
-      .seabedline span { top: 5px; color: var(--blood); }
-      .abyss { position: absolute; left: 0; right: 0; top: 86%; bottom: 0; background: linear-gradient(180deg, rgba(226,56,76,0.18), rgba(226,56,76,0.02)); z-index: 1; }
-      .ship { position: absolute; left: 50%; transform: translateX(-50%); font-size: 40px; transition: top 1.2s cubic-bezier(.4,0,.2,1); z-index: 3; filter: drop-shadow(0 3px 8px rgba(0,0,0,.7)); }
-      .drownreadout { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; z-index: 4; font-size: 12px; color: var(--gold); }
-      .drownreadout b { font-family: "Cinzel", serif; font-weight: 900; font-size: 28px; display: block; }
+      .depthread { text-align: right; }
+      .depthread b { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(30px, 5vw, 46px); line-height: 1; transition: color .4s; }
+      .depthread .depthsub { font-size: 11px; color: var(--mute); margin-top: 4px; }
+      /* the chart + the ship riding its live end, sinking toward the liquidation band */
+      .chartwrap { position: relative; margin-top: 20px; }
+      .spark { width: 100%; height: 260px; display: block; }
+      .ship { position: absolute; left: 0; top: 0; font-size: 32px; transform: translate(-50%, -56%); transition: left .9s linear, top 1.2s cubic-bezier(.4,0,.2,1); z-index: 3; pointer-events: none; filter: drop-shadow(0 3px 6px rgba(0,0,0,.7)); }
 
       .grid3 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
       @media (max-width: 820px) { .grid3 { grid-template-columns: repeat(2,1fr); } }
@@ -171,7 +163,7 @@
 
       // Mark-price chart with the entry line and the liquidation "bar" — a red
       // danger zone the price drifts toward. The whole point of the show.
-      function pricechart(svg, pts, entry, liq, side, pnlUp) {
+      function pricechart(svg, pts, entry, liq, side, pnlUp, shipEl, dead) {
         if (!pts.length) { svg.innerHTML = ""; return; }
         // downsample to keep the path light (a day of 5s polls is ~17k points)
         if (pts.length > 500) {
@@ -181,7 +173,8 @@
           out.push(pts[pts.length - 1]);
           pts = out;
         }
-        const W = svg.clientWidth || 600, H = 136, padX = 1, padT = 10, padB = 10;
+        // padR leaves room for the ship to ride the live end without clipping
+        const W = svg.clientWidth || 600, H = 260, padL = 2, padR = 30, padT = 14, padB = 14;
         const xs = pts.map((p) => p.ts), ms = pts.map((p) => p.mark);
         const x0 = Math.min(...xs), x1 = Math.max(...xs);
         // y-range spans the price path, the entry, and the liq line so the
@@ -189,9 +182,9 @@
         const vals = [...ms, entry];
         if (liq) vals.push(liq);
         let lo = Math.min(...vals), hi = Math.max(...vals);
-        const padY = (hi - lo) * 0.12 || (hi * 0.01) || 1;
+        const padY = (hi - lo) * 0.14 || (hi * 0.01) || 1;
         lo -= padY; hi += padY;
-        const sx = (x) => padX + ((x - x0) / Math.max(1, x1 - x0)) * (W - 2 * padX);
+        const sx = (x) => padL + ((x - x0) / Math.max(1, x1 - x0)) * (W - padL - padR);
         const sy = (v) => padT + (1 - (v - lo) / Math.max(1e-9, hi - lo)) * (H - padT - padB);
         const col = pnlUp ? "#74e6a0" : "#e2384c";
         const d = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.ts).toFixed(1)} ${sy(p.mark).toFixed(1)}`).join(" ");
@@ -205,12 +198,12 @@
           layers +=
             `<rect x="0" y="${zoneY.toFixed(1)}" width="${W}" height="${zoneH.toFixed(1)}" fill="rgba(226,56,76,0.13)"/>
              <line x1="0" y1="${liqY.toFixed(1)}" x2="${W}" y2="${liqY.toFixed(1)}" stroke="#e2384c" stroke-width="1.5" stroke-dasharray="5 3"/>
-             <text x="7" y="${(liqY + (side === "LONG" ? 12 : -5)).toFixed(1)}" fill="#e2384c" font-size="9" font-family="JetBrains Mono" letter-spacing="0.5">⚰ LIQUIDATION ${esc(pxFmt(liq))}</text>`;
+             <text x="7" y="${(liqY + (side === "LONG" ? 13 : -6)).toFixed(1)}" fill="#e2384c" font-size="10" font-family="JetBrains Mono" letter-spacing="0.5">⚰ LIQUIDATION ${esc(pxFmt(liq))}</text>`;
         }
         const entryY = sy(entry);
         layers +=
           `<line x1="0" y1="${entryY.toFixed(1)}" x2="${W}" y2="${entryY.toFixed(1)}" stroke="#b8860b" stroke-width="1" stroke-dasharray="3 4" opacity="0.8"/>
-           <text x="7" y="${(entryY - 5).toFixed(1)}" fill="#b8860b" font-size="9" font-family="JetBrains Mono" letter-spacing="0.5">ENTRY ${esc(pxFmt(entry))}</text>`;
+           <text x="7" y="${(entryY - 6).toFixed(1)}" fill="#b8860b" font-size="10" font-family="JetBrains Mono" letter-spacing="0.5">ENTRY ${esc(pxFmt(entry))}</text>`;
 
         svg.innerHTML =
           `<defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
@@ -219,6 +212,14 @@
            ${layers}
            <path d="${d} L ${sx(x1).toFixed(1)} ${(H - padB).toFixed(1)} L ${sx(x0).toFixed(1)} ${(H - padB).toFixed(1)} Z" fill="url(#pg)"/>
            <path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
+
+        // the ship rides the live end of the line, sinking toward the red band
+        if (shipEl) {
+          const last = pts[pts.length - 1];
+          shipEl.style.left = sx(last.ts).toFixed(1) + "px";
+          shipEl.style.top = sy(last.mark).toFixed(1) + "px";
+          shipEl.textContent = dead ? "⚰️" : "🚢";
+        }
       }
 
       // Build the DOM once per mode and UPDATE values in place each tick — never
@@ -250,19 +251,22 @@
 
       function buildPosition() {
         $("stage").innerHTML = `
-          <div class="card pnlcard">
-            <div class="pnllabel">Unrealized fortune</div>
-            <div class="pnl" id="pnl">—</div>
-            <div class="roi" id="roi"></div>
-            <div class="chartcap">mark price · the descent toward the grave</div>
-            <svg class="spark" id="spark"></svg>
-          </div>
-          <div class="card gauge">
-            <div class="surfaceline"><span id="surfacelbl"></span></div>
-            <div class="seabedline"><span id="seabedlbl"></span></div>
-            <div class="abyss"></div>
-            <div class="ship" id="ship">🚢</div>
-            <div class="drownreadout" id="drownreadout"></div>
+          <div class="card chartcard">
+            <div class="pnlrow">
+              <div>
+                <div class="pnllabel">Unrealized fortune</div>
+                <div class="pnl" id="pnl">—</div>
+                <div class="roi" id="roi"></div>
+              </div>
+              <div class="depthread">
+                <b id="drownbig">—</b>
+                <div class="depthsub">sunk · <span id="distliq"></span></div>
+              </div>
+            </div>
+            <div class="chartwrap">
+              <svg class="spark" id="spark"></svg>
+              <div class="ship" id="ship">🚢</div>
+            </div>
           </div>
           <div class="grid3">
             <div class="stat"><div class="k">Time afloat</div><div class="v" id="s_age"></div><div class="sub">since the roll</div></div>
@@ -295,16 +299,13 @@
         roi.style.color = pnlUp ? "var(--profit)" : "var(--blood)";
         roi.textContent = `${pnlUp ? "+" : ""}${p.roiPct.toFixed(1)}% upon the margin staked`;
 
-        // gauge: ship sinks from surface (11%) toward seabed (86%) as drown rises
-        $("surfacelbl").textContent = `⌁ surface · entry ${px(p.entryPx)}`;
-        $("seabedlbl").textContent = `⚰ seabed · liquidation ${p.liqPx ? px(p.liqPx) : "—"}`;
-        const ship = $("ship");
-        ship.style.top = `calc(11% + ${(drown * 0.75).toFixed(1)}%)`;
-        ship.textContent = dead ? "⚰️" : "🚢";
-        $("drownreadout").innerHTML =
-          `<b>${drown}%</b> sunk` +
-          (dead ? " — a fable that ended too soon"
-                : (p.distToLiqPct != null ? ` · ${p.distToLiqPct.toFixed(1)}% from the grave` : ""));
+        // depth readout (the gauge collapsed into one number; the boat lives on the chart now)
+        const drownBig = $("drownbig");
+        drownBig.textContent = `${drown}%`;
+        drownBig.style.color = drown >= 66 ? "var(--blood)" : drown >= 33 ? "var(--ember)" : "var(--gold)";
+        $("distliq").textContent = dead
+          ? "a fable that ended too soon"
+          : (p.distToLiqPct != null ? `${p.distToLiqPct.toFixed(1)}% from the grave` : "—");
 
         $("s_age").textContent = fmtAge(p.ageMs);
         $("s_liq").textContent = p.liqPx ? px(p.liqPx) : "—";
@@ -326,7 +327,7 @@
           }
           const pts = histCache.map((h) => ({ ts: h.ts, mark: h.mark })).filter((h) => h.mark > 0);
           pts.push({ ts: Date.now(), mark: p.markPx });
-          pricechart($("spark"), pts, p.entryPx, p.liqPx, p.side, pnlUp);
+          pricechart($("spark"), pts, p.entryPx, p.liqPx, p.side, pnlUp, $("ship"), dead);
         } catch {}
       }
 
