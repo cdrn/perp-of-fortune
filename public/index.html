@@ -168,6 +168,14 @@
       // danger zone the price drifts toward. The whole point of the show.
       function pricechart(svg, pts, entry, liq, side, pnlUp) {
         if (!pts.length) { svg.innerHTML = ""; return; }
+        // downsample to keep the path light (a day of 5s polls is ~17k points)
+        if (pts.length > 500) {
+          const step = pts.length / 500;
+          const out = [];
+          for (let i = 0; i < 500; i++) out.push(pts[Math.floor(i * step)]);
+          out.push(pts[pts.length - 1]);
+          pts = out;
+        }
         const W = svg.clientWidth || 600, H = 136, padX = 1, padT = 10, padB = 10;
         const xs = pts.map((p) => p.ts), ms = pts.map((p) => p.mark);
         const x0 = Math.min(...xs), x1 = Math.max(...xs);
