@@ -5,8 +5,8 @@
   "type": "module",
   "description": "An AI rolls a random perp on Hyperliquid and we watch it drown. Live tracker + Underwater-o-meter dashboard. Keys held by sigil — the agent can trade but physically cannot withdraw.",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
+    "dev": "tsx watch --env-file=.env src/main.ts",
+    "start": "tsx --env-file=.env src/main.ts",
     "typecheck": "tsc --noEmit",
     "hl": "tsx scripts/hl.ts"
   },

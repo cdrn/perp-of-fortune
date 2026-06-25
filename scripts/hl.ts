@@ -60,9 +60,9 @@ async function prepareLeverage(): Promise<void> {
   const coin = arg("coin");
   const lev = Number(arg("lev"));
   if (!coin || !lev) throw new Error("need --coin and --lev");
-  const { index } = await assetInfo(coin);
+  const { assetId } = await assetInfo(coin);
   // isolated margin so the liquidation maths are clean and dramatic
-  const action = { type: "updateLeverage", asset: index, isCross: false, leverage: lev };
+  const action = { type: "updateLeverage", asset: assetId, isCross: false, leverage: lev };
   emitTypedData(`set ${coin} isolated leverage ${lev}×`, action, Date.now());
 }
 
@@ -75,7 +75,7 @@ async function prepareOrder(): Promise<void> {
   if (!coin || (side !== "long" && side !== "short")) {
     throw new Error("need --coin and --side long|short");
   }
-  const { index, szDecimals, markPx } = await assetInfo(coin);
+  const { assetId, szDecimals, markPx } = await assetInfo(coin);
   const isBuy = side === "long";
   const notional = usd * lev;
   const size = formatSize(notional / markPx, szDecimals);
@@ -83,7 +83,7 @@ async function prepareOrder(): Promise<void> {
   const px = formatPrice(markPx * (isBuy ? 1 + slip : 1 - slip), szDecimals);
   const action = {
     type: "order",
-    orders: [{ a: index, b: isBuy, p: px, s: size, r: false, t: { limit: { tif: "Ioc" } } }],
+    orders: [{ a: assetId, b: isBuy, p: px, s: size, r: false, t: { limit: { tif: "Ioc" } } }],
     grouping: "na",
   };
   console.log(
