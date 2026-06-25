@@ -1,4 +1,4 @@
-import { POLL_MS, WALLET } from "./config.js";
+import { DEX, POLL_MS, WALLET } from "./config.js";
 import { clearinghouseState, markAndFunding, type RawPosition } from "./hyperliquid.js";
 import { Store } from "./store.js";
 
@@ -111,8 +111,8 @@ export class Tracker {
     if (!WALLET) return;
     const now = Date.now();
     const [chs, ctx] = await Promise.all([
-      clearinghouseState(WALLET),
-      markAndFunding(),
+      clearinghouseState(WALLET, DEX),
+      markAndFunding(DEX),
     ]);
 
     // Pick the largest open position by notional — the show tracks one at a time.

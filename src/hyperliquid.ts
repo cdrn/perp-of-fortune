@@ -34,8 +34,10 @@ export interface ClearinghouseState {
   withdrawable: string;
 }
 
-export function clearinghouseState(user: string): Promise<ClearinghouseState> {
-  return info<ClearinghouseState>({ type: "clearinghouseState", user });
+export function clearinghouseState(user: string, dex = ""): Promise<ClearinghouseState> {
+  return info<ClearinghouseState>(
+    dex ? { type: "clearinghouseState", user, dex } : { type: "clearinghouseState", user },
+  );
 }
 
 interface AssetCtx {
@@ -44,12 +46,12 @@ interface AssetCtx {
   oraclePx: string;
 }
 
-export async function markAndFunding(): Promise<
+export async function markAndFunding(dex = ""): Promise<
   Map<string, { markPx: number; funding: number }>
 > {
   const [meta, ctxs] = await info<
     [{ universe: { name: string }[] }, AssetCtx[]]
-  >({ type: "metaAndAssetCtxs" });
+  >(dex ? { type: "metaAndAssetCtxs", dex } : { type: "metaAndAssetCtxs" });
   const out = new Map<string, { markPx: number; funding: number }>();
   for (let i = 0; i < meta.universe.length; i++) {
     const name = meta.universe[i]?.name;
