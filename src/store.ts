@@ -71,19 +71,27 @@ export class Store {
       .run(s);
   }
 
-  // Returns the existing open row (so callers can preserve openedTs) or inserts.
-  upsertOpen(p: OpenPosition): OpenPosition {
-    const existing = this.db
+  getOpen(coin: string): OpenPosition | undefined {
+    return this.db
       .prepare(`SELECT coin, side, entry_px as entryPx, leverage, opened_ts as openedTs FROM open_position WHERE coin = ?`)
-      .get(p.coin) as OpenPosition | undefined;
-    if (existing) return existing;
+      .get(coin) as OpenPosition | undefined;
+  }
+
+  insertOpen(p: OpenPosition): void {
     this.db
       .prepare(
-        `INSERT INTO open_position (coin, side, entry_px, leverage, opened_ts)
+        `INSERT OR REPLACE INTO open_position (coin, side, entry_px, leverage, opened_ts)
          VALUES (@coin, @side, @entryPx, @leverage, @openedTs)`,
       )
       .run(p);
-    return p;
+  }
+
+  // Last recorded snapshot for a coin — the fallback close data when the fills
+  // API can't tell us how the position ended.
+  lastSnapshot(coin: string): { pnl: number; distToLiqPct: number | null } | undefined {
+    return this.db
+      .prepare(`SELECT pnl, dist_liq as distToLiqPct FROM snapshots WHERE coin = ? ORDER BY ts DESC LIMIT 1`)
+      .get(coin) as { pnl: number; distToLiqPct: number | null } | undefined;
   }
 
   openCoins(): string[] {

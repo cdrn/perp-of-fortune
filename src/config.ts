@@ -1,5 +1,15 @@
 // All read-only. No private keys live in this process — order signing is done
 // out-of-band by sigil. This service only watches a wallet's position.
+import { readFileSync } from "node:fs";
+
+// Featherweight .env loader (tsx doesn't load one) — real env vars win.
+try {
+  for (const line of readFileSync(".env", "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*("?)(.*?)\2\s*$/);
+    if (m && process.env[m[1]!] === undefined) process.env[m[1]!] = m[3]!;
+  }
+} catch {}
+
 export const HL_API = process.env.HL_API ?? "https://api.hyperliquid.xyz";
 export const WALLET = (process.env.UNDERPOD_WALLET ?? "").toLowerCase();
 export const PORT = Number(process.env.UNDERPOD_PORT ?? 4749);

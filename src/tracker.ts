@@ -1,5 +1,11 @@
 import { POLL_MS, WALLET } from "./config.js";
-import { clearinghouseState, markAndFunding, type RawPosition } from "./hyperliquid.js";
+import {
+  clearinghouseState,
+  markAndFunding,
+  userFills,
+  type Fill,
+  type RawPosition,
+} from "./hyperliquid.js";
 import { Store } from "./store.js";
 
 // The derived, dashboard-facing view of the tracked position.
@@ -90,6 +96,15 @@ function derive(
   };
 }
 
+// The fill that opened the current streak: newest fill where the position size
+// going in was zero. Null when fills don't reach back that far (or the fetch failed).
+function openFillTs(fills: Fill[], coin: string): number | null {
+  const f = fills
+    .filter((f) => f.coin === coin && Number(f.startPosition) === 0 && /open/i.test(f.dir))
+    .sort((a, b) => b.time - a.time)[0];
+  return f ? f.time : null;
+}
+
 export class Tracker {
   private state: TrackerState = {
     wallet: WALLET,
@@ -99,8 +114,35 @@ export class Tracker {
     position: null,
     stale: true,
   };
+  // Once per process start we reconcile the stored open row against fills, in
+  // case the position was closed and re-rolled while the tracker was down.
+  private reconciled = false;
 
   constructor(private store: Store) {}
+
+  // Retire a tracked position using its closing fills: real final PnL, real
+  // close time, and liquidation detected from the fill itself (isolated-margin
+  // liquidations don't dent accountValue, so that's the only reliable signal).
+  private closeTracked(coin: string, now: number, fills: Fill[]): void {
+    const open = this.store.getOpen(coin);
+    if (!open) return;
+    const closing = fills.filter(
+      (f) =>
+        f.coin === coin &&
+        f.time >= open.openedTs &&
+        (f.liquidation != null || /close|liquidat|>/i.test(f.dir)),
+    );
+    let wasLiq = closing.some((f) => f.liquidation != null || /liquidat/i.test(f.dir));
+    let finalPnl = closing.reduce((sum, f) => sum + Number(f.closedPnl || 0), 0);
+    let closedTs = closing.length ? Math.max(...closing.map((f) => f.time)) : now;
+    if (!closing.length) {
+      // Fills unavailable → fall back to the last thing the tracker saw.
+      const snap = this.store.lastSnapshot(coin);
+      finalPnl = snap?.pnl ?? 0;
+      wasLiq = snap?.distToLiqPct != null && snap.distToLiqPct < 1.5;
+    }
+    this.store.closePosition(coin, closedTs, finalPnl, wasLiq);
+  }
 
   get current(): TrackerState {
     // Mark stale if we haven't refreshed in 3 poll intervals.
@@ -121,13 +163,25 @@ export class Tracker {
       .filter((p) => Number(p.szi) !== 0)
       .sort((a, b) => Math.abs(Number(b.positionValue)) - Math.abs(Number(a.positionValue)));
 
+    // Fills are only fetched on ticks where something opened, closed, or
+    // flipped — one lazy request shared by everything below.
+    let fillsCache: Fill[] | null = null;
+    const getFills = async (): Promise<Fill[]> => {
+      if (fillsCache === null) {
+        try {
+          fillsCache = await userFills(WALLET);
+        } catch {
+          fillsCache = [];
+        }
+      }
+      return fillsCache;
+    };
+
     const liveCoins = new Set(positions.map((p) => p.coin));
     // Close out any tracked position that vanished from chain.
     for (const coin of this.store.openCoins()) {
       if (!liveCoins.has(coin)) {
-        // No position row left → infer liquidation if account value collapsed.
-        const wasLiq = Number(chs.marginSummary.accountValue) < 1;
-        this.store.closePosition(coin, now, 0, wasLiq);
+        this.closeTracked(coin, now, await getFills());
       }
     }
 
@@ -149,13 +203,33 @@ export class Tracker {
     const fundingRate = m?.funding ?? 0;
     const side = Number(top.szi) < 0 ? "SHORT" : "LONG";
 
-    const open = this.store.upsertOpen({
-      coin: top.coin,
-      side,
-      entryPx: Number(top.entryPx ?? mark),
-      leverage: top.leverage?.value ?? 1,
-      openedTs: now,
-    });
+    let open = this.store.getOpen(top.coin);
+    // Same coin, opposite side → the old saga ended and a new roll began.
+    if (open && open.side !== side) {
+      this.closeTracked(top.coin, now, await getFills());
+      open = undefined;
+    }
+    // First tick after a restart: if fills show a fresh open newer than the
+    // stored row, the coin was closed and re-rolled while we were dark.
+    if (open && !this.reconciled) {
+      const ts = openFillTs(await getFills(), top.coin);
+      if (ts && ts > open.openedTs + 60_000) {
+        this.closeTracked(top.coin, ts, await getFills());
+        open = undefined;
+      }
+    }
+    this.reconciled = true;
+    if (!open) {
+      open = {
+        coin: top.coin,
+        side,
+        entryPx: Number(top.entryPx ?? mark),
+        leverage: top.leverage?.value ?? 1,
+        // Age from the actual open fill, not from when the tracker first looked.
+        openedTs: openFillTs(await getFills(), top.coin) ?? now,
+      };
+      this.store.insertOpen(open);
+    }
 
     const view = derive(top, mark, fundingRate, open.openedTs, now);
 

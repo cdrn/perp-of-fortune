@@ -7,9 +7,18 @@
 //
 // Signing is NOT done here — these build the artifact sigil signs and then post
 // the result. Flow: prepare → (sigil_eth_sign_typed_data) → send.
+import { readFileSync } from "node:fs";
 import { encode } from "@msgpack/msgpack";
 import jsSha3 from "js-sha3";
 const { keccak256 } = jsSha3;
+
+// Featherweight .env loader (tsx doesn't load one) — real env vars win.
+try {
+  for (const line of readFileSync(".env", "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*("?)(.*?)\2\s*$/);
+    if (m && process.env[m[1]!] === undefined) process.env[m[1]!] = m[3]!;
+  }
+} catch {}
 
 export const NET = (process.env.HL_NET ?? "testnet").toLowerCase();
 export const IS_MAINNET = NET === "mainnet";
@@ -40,6 +49,46 @@ export interface AssetInfo {
   index: number;
   szDecimals: number;
   markPx: number;
+}
+
+// Tradeable perp names on the current net — so the roll never picks a coin
+// that doesn't exist here (testnet is missing chunks of the mainnet basket).
+export async function universe(): Promise<string[]> {
+  const [meta] = await info<
+    [{ universe: { name: string; isDelisted?: boolean }[] }, unknown]
+  >({ type: "metaAndAssetCtxs" });
+  return meta.universe.filter((u) => !u.isDelisted).map((u) => u.name);
+}
+
+export interface LivePosition {
+  coin: string;
+  szi: number; // signed size: negative = short
+  entryPx: number;
+  leverage: number;
+}
+
+export async function openPositions(user: string): Promise<LivePosition[]> {
+  const chs = await info<{
+    assetPositions: {
+      position: {
+        coin: string;
+        szi: string;
+        entryPx: string | null;
+        positionValue: string;
+        leverage?: { value: number };
+      };
+    }[];
+  }>({ type: "clearinghouseState", user });
+  return chs.assetPositions
+    .map((p) => p.position)
+    .filter((p) => Number(p.szi) !== 0)
+    .sort((a, b) => Math.abs(Number(b.positionValue)) - Math.abs(Number(a.positionValue)))
+    .map((p) => ({
+      coin: p.coin,
+      szi: Number(p.szi),
+      entryPx: Number(p.entryPx ?? 0),
+      leverage: p.leverage?.value ?? 1,
+    }));
 }
 
 export async function assetInfo(coin: string): Promise<AssetInfo> {

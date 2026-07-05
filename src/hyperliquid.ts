@@ -38,6 +38,24 @@ export function clearinghouseState(user: string): Promise<ClearinghouseState> {
   return info<ClearinghouseState>({ type: "clearinghouseState", user });
 }
 
+// A fill from HL's userFills. `startPosition` is the signed size *before* the
+// fill (0 = this fill opened a fresh streak). Liquidation fills carry the
+// `liquidation` object; `closedPnl` is realized PnL booked by the fill.
+export interface Fill {
+  coin: string;
+  px: string;
+  sz: string;
+  time: number;
+  startPosition: string;
+  dir: string; // "Open Long", "Close Short", "Long > Short", ...
+  closedPnl: string;
+  liquidation?: { liquidatedUser: string; markPx: string; method: string };
+}
+
+export function userFills(user: string): Promise<Fill[]> {
+  return info<Fill[]>({ type: "userFills", user });
+}
+
 interface AssetCtx {
   funding: string; // current hourly funding rate (8h-equivalent? no — HL is hourly)
   markPx: string;

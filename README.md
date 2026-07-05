@@ -14,9 +14,9 @@ through a Hyperliquid **API/agent wallet** that has *trade-only* permission — 
 **physically cannot withdraw funds**. So we can hand an AI live trading keys on air
 and it cannot rug the show. That's the whole story, and it's literally true.
 
-This repo is the **read side** only — no keys, no signing. Order placement is a
-separate step driven by sigil (`sigil_eth_sign_typed_data` over Hyperliquid's
-EIP-712 action) — see `EXECUTION.md` (TODO) once wired.
+The dash (`src/`) is the **read side** only — no keys, no signing. Order placement
+is the operator CLI (`scripts/hl.ts`) driven by sigil — the full show runbook is
+in [`EXECUTION.md`](EXECUTION.md).
 
 ## Run locally
 
@@ -29,16 +29,16 @@ npm run dev               # dash on http://localhost:4749
 It works against any wallet with an open Hyperliquid position — point it at your
 own to see it light up before show day.
 
+Laptop note: if the lid closes, the tracker sleeps with it. That's fine — the
+chart breaks the line across the gap instead of drawing through it, and on
+restart the tracker reconciles against Hyperliquid's fill history (real open
+time, real close PnL, liquidations detected from the liquidation fill itself).
+
 ## Architecture
 
-- `src/hyperliquid.ts` — read client for HL's public `/info` (`clearinghouseState`, `metaAndAssetCtxs`).
-- `src/tracker.ts` — poll loop; derives side / PnL / ROI / liq distance / drown% / funding bleed.
+- `src/hyperliquid.ts` — read client for HL's public `/info` (`clearinghouseState`, `metaAndAssetCtxs`, `userFills`).
+- `src/tracker.ts` — poll loop; derives side / PnL / ROI / liq distance / drown% / funding bleed; closes out the saga log from fill history.
 - `src/store.ts` — SQLite: snapshot history (PnL chart), open-position registry, closed-position saga log.
 - `src/server.ts` — static dash + `/api/state`, `/api/history`, `/api/closed`.
 - `public/index.html` — the Underwater-o-meter.
-
-## Deploy (existing backdraft droplet)
-
-Runs as its own container alongside delta/funding. Add a Caddy vhost reverse-proxying
-`127.0.0.1:4749`, then `docker compose up -d`. Featherweight — a poll loop + static
-page, nothing that strains the 1GB box.
+- `scripts/hl.ts` + `scripts/hllib.ts` — operator CLI: roll the wheel, prepare/send orders via sigil. Never imported by the dash.

@@ -2,8 +2,10 @@
 // The agent rolls, calls sigil to sign the prepared typed-data, then sends.
 //
 //   npm run hl roll                                  # spin the wheel
+//   npm run hl -- roll --seed "listener phrase"      # verifiable (keccak) roll
 //   npm run hl prepare-leverage --coin SOL --lev 10  # → typed-data for sigil
 //   npm run hl prepare-order --coin SOL --side short --usd 50 --lev 10
+//   npm run hl prepare-close [--coin SOL]            # reduce-only, cut it loose
 //   npm run hl send --sig 0x<65-byte-sig-from-sigil>
 //
 // HL_NET=testnet (default, safe) or mainnet. prepare- commands stash the exact
@@ -11,6 +13,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
+import jsSha3 from "js-sha3";
 import {
   agentTypedData,
   assetInfo,
@@ -18,9 +21,12 @@ import {
   formatSize,
   IS_MAINNET,
   NET,
+  openPositions,
   postExchange,
   splitSig,
+  universe,
 } from "./hllib.js";
+const { keccak256 } = jsSha3;
 
 const STASH = join(tmpdir(), "underpod-hl-pending.json");
 const TD_FILE = join(tmpdir(), "underpod-hl-typeddata.json");
@@ -34,12 +40,34 @@ function arg(name: string): string | undefined {
 const BASKET = ["BTC", "ETH", "SOL", "DOGE", "WIF", "kPEPE", "AVAX", "SUI", "LINK", "HYPE"];
 const LEV_WHEEL = [2, 3, 5, 5, 10, 10, 20]; // bigger rolls rarer, funnier
 
-function roll(): void {
-  const coin = BASKET[Math.floor(Math.random() * BASKET.length)]!;
-  const side = Math.random() < 0.5 ? "long" : "short";
-  const lev = LEV_WHEEL[Math.floor(Math.random() * LEV_WHEEL.length)]!;
+async function roll(): Promise<void> {
+  // Only spin over coins that actually trade on this net — testnet is missing
+  // chunks of the basket and we don't want to find out live.
+  const listed = new Set(await universe());
+  const basket = BASKET.filter((c) => listed.has(c));
+  const missing = BASKET.filter((c) => !listed.has(c));
+  if (!basket.length) throw new Error(`none of the basket trades on ${NET}`);
+  if (missing.length) console.log(`\n  (not listed on ${NET}, skipped: ${missing.join(", ")})`);
+
+  // With --seed the roll is deterministic and verifiable: keccak256 of the
+  // phrase picks coin / side / leverage. Anyone can re-derive it at home.
+  const seed = arg("seed");
+  let picks: number[];
+  let provenance = "";
+  if (seed) {
+    const h = keccak256(seed);
+    picks = [0, 1, 2].map((i) => parseInt(h.slice(i * 8, i * 8 + 8), 16));
+    provenance = `  seed "${seed}" → keccak256 0x${h.slice(0, 16)}…\n`;
+  } else {
+    picks = [0, 1, 2].map(() => Math.floor(Math.random() * 0xffffffff));
+  }
+  const coin = basket[picks[0]! % basket.length]!;
+  const side = picks[1]! % 2 === 0 ? "long" : "short";
+  const lev = LEV_WHEEL[picks[2]! % LEV_WHEEL.length]!;
+
   console.log(`\n  🎡  THE WHEEL HAS SPOKEN\n`);
   console.log(`      ${side.toUpperCase()} ${coin}  ·  ${lev}×\n`);
+  if (provenance) console.log(provenance);
   console.log(`  next (note the -- separator so npm forwards the flags):`);
   console.log(`    npm run hl -- prepare-leverage --coin ${coin} --lev ${lev}`);
   console.log(`    npm run hl -- prepare-order --coin ${coin} --side ${side} --usd 50 --lev ${lev}\n`);
@@ -93,6 +121,39 @@ async function prepareOrder(): Promise<void> {
   emitTypedData(`${side} ${coin} ${size} @ ${px}`, action, Date.now());
 }
 
+// The "cut it loose" button: reduce-only IOC for the full size, opposite
+// direction. Reads the live position from the tracked wallet, so there's
+// nothing to fat-finger on air beyond approving the signature.
+async function prepareClose(): Promise<void> {
+  const wallet = (arg("wallet") ?? process.env.UNDERPOD_WALLET ?? "").toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
+    throw new Error("need the position's address: --wallet 0x… or UNDERPOD_WALLET in .env");
+  }
+  const coinArg = arg("coin");
+  const slip = Number(arg("slippage") ?? 0.05);
+  const positions = await openPositions(wallet);
+  if (!positions.length) throw new Error(`no open position on ${wallet} (net=${NET})`);
+  const pos = coinArg ? positions.find((p) => p.coin === coinArg) : positions[0];
+  if (!pos) {
+    throw new Error(`no open ${coinArg} position (open: ${positions.map((p) => p.coin).join(", ")})`);
+  }
+  const side = pos.szi < 0 ? "SHORT" : "LONG";
+  const { index, szDecimals, markPx } = await assetInfo(pos.coin);
+  const isBuy = pos.szi < 0; // closing a short buys it back
+  const size = formatSize(Math.abs(pos.szi), szDecimals);
+  const px = formatPrice(markPx * (isBuy ? 1 + slip : 1 - slip), szDecimals);
+  const action = {
+    type: "order",
+    orders: [{ a: index, b: isBuy, p: px, s: size, r: true, t: { limit: { tif: "Ioc" } } }],
+    grouping: "na",
+  };
+  console.log(
+    `\n  CLOSE ${side} ${pos.coin}: size ${size} (entry ${pos.entryPx}, mark ${markPx})` +
+      ` → reduce-only IOC ${px}`,
+  );
+  emitTypedData(`close ${side} ${pos.coin} ${size} @ ${px}`, action, Date.now());
+}
+
 async function send(): Promise<void> {
   const sig = arg("sig");
   if (!sig) throw new Error("need --sig 0x<65-byte signature from sigil>");
@@ -105,18 +166,20 @@ async function send(): Promise<void> {
 const cmd = process.argv[2];
 const run =
   cmd === "roll"
-    ? async () => roll()
+    ? roll
     : cmd === "prepare-leverage"
       ? prepareLeverage
       : cmd === "prepare-order"
         ? prepareOrder
-        : cmd === "send"
-          ? send
-          : null;
+        : cmd === "prepare-close"
+          ? prepareClose
+          : cmd === "send"
+            ? send
+            : null;
 
 if (!run) {
   console.error(
-    `usage: npm run hl <roll|prepare-leverage|prepare-order|send> [...]\n` +
+    `usage: npm run hl <roll|prepare-leverage|prepare-order|prepare-close|send> [...]\n` +
       `  net: ${NET}${IS_MAINNET ? "  ⚠️  MAINNET — real money" : "  (testnet)"}`,
   );
   process.exit(1);
