@@ -1,7 +1,8 @@
 // Perp of Fortune — the roller. Operator CLI the agent drives live on the show.
 // The agent rolls, calls sigil to sign the prepared typed-data, then sends.
 //
-//   npm run hl roll                                  # spin the wheel
+//   npm run hl roll                                  # spin the wheel (curated basket)
+//   npm run hl -- roll --any                         # spin over the ENTIRE universe
 //   npm run hl -- roll --seed "listener phrase"      # verifiable (keccak) roll
 //   npm run hl prepare-leverage --coin SOL --lev 10  # → typed-data for sigil
 //   npm run hl prepare-order --coin SOL --side short --usd 50 --lev 10
@@ -42,11 +43,14 @@ const LEV_WHEEL = [2, 3, 5, 5, 10, 10, 20]; // bigger rolls rarer, funnier
 
 async function roll(): Promise<void> {
   // Only spin over coins that actually trade on this net — testnet is missing
-  // chunks of the basket and we don't want to find out live.
-  const listed = new Set(await universe());
-  const basket = BASKET.filter((c) => listed.has(c));
-  const missing = BASKET.filter((c) => !listed.has(c));
+  // chunks of the basket and we don't want to find out live. --any widens the
+  // wheel to the entire listed universe (~180 perps of varying dignity).
+  const listed = await universe();
+  const any = process.argv.includes("--any");
+  const basket = any ? listed : BASKET.filter((c) => listed.includes(c));
+  const missing = any ? [] : BASKET.filter((c) => !listed.includes(c));
   if (!basket.length) throw new Error(`none of the basket trades on ${NET}`);
+  if (any) console.log(`\n  (full universe: ${basket.length} perps on ${NET})`);
   if (missing.length) console.log(`\n  (not listed on ${NET}, skipped: ${missing.join(", ")})`);
 
   // With --seed the roll is deterministic and verifiable: keccak256 of the
@@ -106,7 +110,13 @@ async function prepareOrder(): Promise<void> {
   const { assetId, szDecimals, markPx } = await assetInfo(coin);
   const isBuy = side === "long";
   const notional = usd * lev;
+  if (notional < 10) throw new Error(`HL minimum order value is $10 notional (got $${notional})`);
   const size = formatSize(notional / markPx, szDecimals);
+  if (Number(size) <= 0) {
+    throw new Error(
+      `$${notional} notional rounds to 0 ${coin} (size step ${Math.pow(10, -szDecimals)}) — raise --usd or --lev`,
+    );
+  }
   // marketable IOC: cross the spread by `slip` so it fills now
   const px = formatPrice(markPx * (isBuy ? 1 + slip : 1 - slip), szDecimals);
   const action = {

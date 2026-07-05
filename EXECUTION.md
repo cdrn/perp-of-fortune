@@ -28,13 +28,15 @@ HL_NET=mainnet npm run hl -- roll          # the real thing
 ## 1. Roll
 
 ```bash
-npm run hl roll                            # Math.random() spin
+npm run hl roll                            # Math.random() spin, curated basket
+npm run hl -- roll --any                   # spin over every listed perp (~180)
 npm run hl -- roll --seed "listener phrase"  # verifiable: keccak256(seed) picks
 ```
 
 The roll only spins over coins actually listed on the current net (it checks),
 and prints the exact next commands. The seeded form is provably fair — anyone
-can re-derive coin/side/leverage from the phrase at home.
+can re-derive coin/side/leverage from the phrase at home. `--any` and `--seed`
+compose: a listener phrase can pick from the full universe.
 
 ## 2. Set leverage (isolated)
 
