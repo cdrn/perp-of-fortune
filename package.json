@@ -8,7 +8,8 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
-    "hl": "tsx scripts/hl.ts"
+    "hl": "tsx scripts/hl.ts",
+    "close": "tsx scripts/hl.ts prepare-close"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

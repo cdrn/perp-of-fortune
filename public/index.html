@@ -320,7 +320,7 @@
 
         const pnl = $("pnl");
         pnl.className = "pnl " + (pnlUp ? "up" : "down");
-        pnl.textContent = (pnlUp ? "+" : "−") + fmtUsd(Math.abs(p.unrealizedPnl)).slice(1);
+        pnl.textContent = (pnlUp ? "+$" : "−$") + fmtUsd(Math.abs(p.unrealizedPnl)).slice(1);
         const roi = $("roi");
         roi.style.color = pnlUp ? "var(--profit)" : "var(--blood)";
         roi.textContent = `${pnlUp ? "+" : ""}${p.roiPct.toFixed(1)}% upon the margin staked`;

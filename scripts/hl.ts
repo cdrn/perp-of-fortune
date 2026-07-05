@@ -88,9 +88,9 @@ async function prepareLeverage(): Promise<void> {
   const coin = arg("coin");
   const lev = Number(arg("lev"));
   if (!coin || !lev) throw new Error("need --coin and --lev");
-  const { index } = await assetInfo(coin);
+  const { assetId } = await assetInfo(coin);
   // isolated margin so the liquidation maths are clean and dramatic
-  const action = { type: "updateLeverage", asset: index, isCross: false, leverage: lev };
+  const action = { type: "updateLeverage", asset: assetId, isCross: false, leverage: lev };
   emitTypedData(`set ${coin} isolated leverage ${lev}×`, action, Date.now());
 }
 
@@ -103,7 +103,7 @@ async function prepareOrder(): Promise<void> {
   if (!coin || (side !== "long" && side !== "short")) {
     throw new Error("need --coin and --side long|short");
   }
-  const { index, szDecimals, markPx } = await assetInfo(coin);
+  const { assetId, szDecimals, markPx } = await assetInfo(coin);
   const isBuy = side === "long";
   const notional = usd * lev;
   const size = formatSize(notional / markPx, szDecimals);
@@ -111,7 +111,7 @@ async function prepareOrder(): Promise<void> {
   const px = formatPrice(markPx * (isBuy ? 1 + slip : 1 - slip), szDecimals);
   const action = {
     type: "order",
-    orders: [{ a: index, b: isBuy, p: px, s: size, r: false, t: { limit: { tif: "Ioc" } } }],
+    orders: [{ a: assetId, b: isBuy, p: px, s: size, r: false, t: { limit: { tif: "Ioc" } } }],
     grouping: "na",
   };
   console.log(
@@ -131,20 +131,24 @@ async function prepareClose(): Promise<void> {
   }
   const coinArg = arg("coin");
   const slip = Number(arg("slippage") ?? 0.05);
-  const positions = await openPositions(wallet);
+  // HIP-3 coins are addressed "dex:COIN" — read that dex's clearinghouse.
+  const dex = coinArg?.includes(":")
+    ? coinArg.slice(0, coinArg.indexOf(":"))
+    : (process.env.UNDERPOD_DEX ?? "").trim();
+  const positions = await openPositions(wallet, dex);
   if (!positions.length) throw new Error(`no open position on ${wallet} (net=${NET})`);
   const pos = coinArg ? positions.find((p) => p.coin === coinArg) : positions[0];
   if (!pos) {
     throw new Error(`no open ${coinArg} position (open: ${positions.map((p) => p.coin).join(", ")})`);
   }
   const side = pos.szi < 0 ? "SHORT" : "LONG";
-  const { index, szDecimals, markPx } = await assetInfo(pos.coin);
+  const { assetId, szDecimals, markPx } = await assetInfo(pos.coin);
   const isBuy = pos.szi < 0; // closing a short buys it back
   const size = formatSize(Math.abs(pos.szi), szDecimals);
   const px = formatPrice(markPx * (isBuy ? 1 + slip : 1 - slip), szDecimals);
   const action = {
     type: "order",
-    orders: [{ a: index, b: isBuy, p: px, s: size, r: true, t: { limit: { tif: "Ioc" } } }],
+    orders: [{ a: assetId, b: isBuy, p: px, s: size, r: true, t: { limit: { tif: "Ioc" } } }],
     grouping: "na",
   };
   console.log(

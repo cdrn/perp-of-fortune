@@ -70,10 +70,13 @@ master account, not the agent key that signs).
 ## 5. Cut it loose (or don't)
 
 ```bash
-npm run hl prepare-close                   # closes the largest open position
-npm run hl -- prepare-close --coin SOL     # or name it
+npm run close                              # closes the largest open position
+npm run close -- --coin SOL                # or name it (npm run hl prepare-close works too)
 # → sign with sigil → npm run hl -- send --sig 0x…
 ```
+
+HIP-3 builder perps are addressed as `dex:COIN` (e.g. `--coin xyz:DRAM`);
+set `UNDERPOD_DEX` to make the tracker watch a builder dex.
 
 Reduce-only IOC for the full size in the opposite direction — it can only
 close, never flip. Reads the position from `UNDERPOD_WALLET` (or `--wallet`),

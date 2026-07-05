@@ -46,7 +46,7 @@ async function info<T>(body: unknown): Promise<T> {
 }
 
 export interface AssetInfo {
-  index: number;
+  assetId: number;
   szDecimals: number;
   markPx: number;
 }
@@ -67,7 +67,7 @@ export interface LivePosition {
   leverage: number;
 }
 
-export async function openPositions(user: string): Promise<LivePosition[]> {
+export async function openPositions(user: string, dex = ""): Promise<LivePosition[]> {
   const chs = await info<{
     assetPositions: {
       position: {
@@ -78,7 +78,7 @@ export async function openPositions(user: string): Promise<LivePosition[]> {
         leverage?: { value: number };
       };
     }[];
-  }>({ type: "clearinghouseState", user });
+  }>(dex ? { type: "clearinghouseState", user, dex } : { type: "clearinghouseState", user });
   return chs.assetPositions
     .map((p) => p.position)
     .filter((p) => Number(p.szi) !== 0)
@@ -91,14 +91,31 @@ export async function openPositions(user: string): Promise<LivePosition[]> {
     }));
 }
 
+// Resolve a perp to the integer asset id used in actions.
+//  - main-dex perps: the plain index in the meta universe (BTC = 0).
+//  - HIP-3 builder perps, addressed as "dex:COIN" (e.g. "xyz:DRAM"):
+//      assetId = 100000 + perpDexIndex*10000 + indexInDexMeta
+//    where perpDexIndex is the position in the `perpDexs` list (main = 0).
 export async function assetInfo(coin: string): Promise<AssetInfo> {
+  const isHip3 = coin.includes(":");
+  const dexName = isHip3 ? coin.slice(0, coin.indexOf(":")) : null;
+
+  let perpDexIndex = 0;
+  if (isHip3) {
+    const dexs = await info<({ name: string } | null)[]>({ type: "perpDexs" });
+    perpDexIndex = dexs.findIndex((d) => d?.name === dexName);
+    if (perpDexIndex < 0) throw new Error(`unknown perp dex: ${dexName} (net=${NET})`);
+  }
+
   const [meta, ctxs] = await info<
     [{ universe: { name: string; szDecimals: number }[] }, { markPx: string }[]]
-  >({ type: "metaAndAssetCtxs" });
+  >(isHip3 ? { type: "metaAndAssetCtxs", dex: dexName } : { type: "metaAndAssetCtxs" });
+
   const index = meta.universe.findIndex((u) => u.name === coin);
   if (index < 0) throw new Error(`unknown perp: ${coin} (net=${NET})`);
+
   return {
-    index,
+    assetId: isHip3 ? 100000 + perpDexIndex * 10000 + index : index,
     szDecimals: meta.universe[index]!.szDecimals,
     markPx: Number(ctxs[index]!.markPx),
   };
