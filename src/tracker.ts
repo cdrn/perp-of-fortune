@@ -1,4 +1,4 @@
-import { DEX, POLL_MS, WALLET } from "./config.js";
+import { DEXES, POLL_MS, WALLET } from "./config.js";
 import {
   clearinghouseState,
   markAndFunding,
@@ -11,6 +11,7 @@ import { Store } from "./store.js";
 // The derived, dashboard-facing view of the tracked position.
 export interface PositionView {
   coin: string;
+  dex: string; // which perp dex this position lives on ("" = main)
   side: "LONG" | "SHORT";
   size: number; // absolute units
   entryPx: number;
@@ -31,6 +32,7 @@ export interface PositionView {
 
 export interface TrackerState {
   wallet: string;
+  dex: string; // dex being rendered (the one holding the position, or best-funded when idle)
   updatedTs: number;
   accountValue: number;
   withdrawable: number;
@@ -44,6 +46,7 @@ function derive(
   fundingRate: number,
   openedTs: number,
   now: number,
+  dex: string,
 ): PositionView {
   const szi = Number(raw.szi);
   const side = szi < 0 ? "SHORT" : "LONG";
@@ -77,6 +80,7 @@ function derive(
 
   return {
     coin: raw.coin,
+    dex,
     side,
     size,
     entryPx,
@@ -108,6 +112,7 @@ function openFillTs(fills: Fill[], coin: string): number | null {
 export class Tracker {
   private state: TrackerState = {
     wallet: WALLET,
+    dex: "",
     updatedTs: 0,
     accountValue: 0,
     withdrawable: 0,
@@ -152,16 +157,42 @@ export class Tracker {
   async tick(): Promise<void> {
     if (!WALLET) return;
     const now = Date.now();
-    const [chs, ctx] = await Promise.all([
-      clearinghouseState(WALLET, DEX),
-      markAndFunding(DEX),
-    ]);
+    // Scan every configured perp dex (main "" + builder dexes like "xyz"). A
+    // roll can land on any of them; we render whichever holds the live position.
+    // A dex that isn't listed on this net just drops out of the scan.
+    const scans = (
+      await Promise.all(
+        DEXES.map(async (dex) => {
+          try {
+            const [chs, ctx] = await Promise.all([
+              clearinghouseState(WALLET, dex),
+              markAndFunding(dex),
+            ]);
+            return { dex, chs, ctx };
+          } catch (err) {
+            console.error(
+              `[underpod] dex "${dex || "main"}" scan failed: ${err instanceof Error ? err.message : err}`,
+            );
+            return null;
+          }
+        }),
+      )
+    ).filter((s): s is NonNullable<typeof s> => s !== null);
 
-    // Pick the largest open position by notional — the show tracks one at a time.
-    const positions = chs.assetPositions
-      .map((p) => p.position)
-      .filter((p) => Number(p.szi) !== 0)
-      .sort((a, b) => Math.abs(Number(b.positionValue)) - Math.abs(Number(a.positionValue)));
+    // Every open position across all dexes, tagged with the dex and that dex's
+    // own mark/funding + clearinghouse. Largest notional wins — one at a time.
+    const candidates = scans
+      .flatMap((s) =>
+        s.chs.assetPositions
+          .map((p) => p.position)
+          .filter((p) => Number(p.szi) !== 0)
+          .map((position) => ({ position, dex: s.dex, ctx: s.ctx, chs: s.chs })),
+      )
+      .sort(
+        (a, b) =>
+          Math.abs(Number(b.position.positionValue)) -
+          Math.abs(Number(a.position.positionValue)),
+      );
 
     // Fills are only fetched on ticks where something opened, closed, or
     // flipped — one lazy request shared by everything below.
@@ -177,7 +208,7 @@ export class Tracker {
       return fillsCache;
     };
 
-    const liveCoins = new Set(positions.map((p) => p.coin));
+    const liveCoins = new Set(candidates.map((c) => c.position.coin));
     // Close out any tracked position that vanished from chain.
     for (const coin of this.store.openCoins()) {
       if (!liveCoins.has(coin)) {
@@ -185,20 +216,31 @@ export class Tracker {
       }
     }
 
-    const top = positions[0];
-    if (!top) {
+    const winner = candidates[0];
+    if (!winner) {
+      // Idle: show the best-funded dex's purse so the header isn't empty.
+      const primary = scans
+        .slice()
+        .sort(
+          (a, b) =>
+            Number(b.chs.marginSummary.accountValue) -
+            Number(a.chs.marginSummary.accountValue),
+        )[0];
       this.state = {
         wallet: WALLET,
+        dex: primary?.dex ?? "",
         updatedTs: now,
-        accountValue: Number(chs.marginSummary.accountValue),
-        withdrawable: Number(chs.withdrawable),
+        accountValue: Number(primary?.chs.marginSummary.accountValue ?? 0),
+        withdrawable: Number(primary?.chs.withdrawable ?? 0),
         position: null,
         stale: false,
       };
       return;
     }
 
-    const m = ctx.get(top.coin);
+    const top = winner.position;
+    const topChs = winner.chs;
+    const m = winner.ctx.get(top.coin);
     const mark = m?.markPx ?? Number(top.entryPx ?? 0);
     const fundingRate = m?.funding ?? 0;
     const side = Number(top.szi) < 0 ? "SHORT" : "LONG";
@@ -231,7 +273,7 @@ export class Tracker {
       this.store.insertOpen(open);
     }
 
-    const view = derive(top, mark, fundingRate, open.openedTs, now);
+    const view = derive(top, mark, fundingRate, open.openedTs, now, winner.dex);
 
     this.store.insertSnapshot({
       ts: now,
@@ -241,14 +283,15 @@ export class Tracker {
       mark: view.markPx,
       fundingPaid: view.fundingPaid,
       distToLiqPct: view.distToLiqPct,
-      accountValue: Number(chs.marginSummary.accountValue),
+      accountValue: Number(topChs.marginSummary.accountValue),
     });
 
     this.state = {
       wallet: WALLET,
+      dex: winner.dex,
       updatedTs: now,
-      accountValue: Number(chs.marginSummary.accountValue),
-      withdrawable: Number(chs.withdrawable),
+      accountValue: Number(topChs.marginSummary.accountValue),
+      withdrawable: Number(topChs.withdrawable),
       position: view,
       stale: false,
     };

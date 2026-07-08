@@ -88,6 +88,7 @@
       .chartwrap { position: relative; margin-top: 20px; }
       .spark { width: 100%; height: 260px; display: block; }
       .ship { position: absolute; left: 0; top: 0; font-size: 32px; transform: translate(-50%, -56%); transition: left .9s linear, top 1.2s cubic-bezier(.4,0,.2,1); z-index: 3; pointer-events: none; filter: drop-shadow(0 3px 6px rgba(0,0,0,.7)); }
+      .shipprice { position: absolute; left: 0; top: 0; transform: translate(-50%, -210%); font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: var(--parch); background: rgba(4,4,3,0.72); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; white-space: nowrap; z-index: 3; pointer-events: none; transition: left .9s linear, top 1.2s cubic-bezier(.4,0,.2,1); }
 
       .grid3 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
       @media (max-width: 820px) { .grid3 { grid-template-columns: repeat(2,1fr); } }
@@ -98,6 +99,14 @@
       .stat .v.bleed { color: var(--blood); }
       .stat .v.profit { color: var(--profit); }
       .stat .sub { color: var(--mute); font-size: 11px; margin-top: 3px; }
+
+      /* end-card shown when a replay finishes — the run's epitaph */
+      .verdict { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(4,4,3,0.62); backdrop-filter: blur(2px); z-index: 5; animation: vfade .6s ease; }
+      @keyframes vfade { from { opacity: 0 } }
+      .verdict > div { text-align: center; }
+      .verdict .vword { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(26px, 4.5vw, 48px); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); }
+      .verdict .vpnl { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(32px, 6vw, 64px); margin-top: 6px; }
+      .verdict .vsub { font-size: 12px; color: var(--mute); margin-top: 12px; }
 
       .empty { text-align: center; padding: 76px 20px; grid-column: 1 / -1; }
       .empty .big { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(28px, 5vw, 44px); color: var(--gold); letter-spacing: 0.05em; text-transform: uppercase; }
@@ -239,12 +248,31 @@
            <path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
            ${dots}`;
 
-        // the ship rides the live end of the line, sinking toward the red band
+        // the ship rides the live end of the line, sinking toward the red band;
+        // a little readout above it shows where the mark is right now.
         if (shipEl) {
           const last = pts[pts.length - 1];
-          shipEl.style.left = sx(last.ts).toFixed(1) + "px";
-          shipEl.style.top = sy(last.mark).toFixed(1) + "px";
+          const lx = sx(last.ts).toFixed(1) + "px";
+          const ly = sy(last.mark).toFixed(1) + "px";
+          const priceEl = document.getElementById("shipprice");
+          // First placement teleports (transitions off), otherwise the ship
+          // glides in from the untouched elements' 0,0 — the top-left corner.
+          const first = !shipEl.style.left;
+          if (first) {
+            for (const el of [shipEl, priceEl]) if (el) el.style.transition = "none";
+          }
+          shipEl.style.left = lx;
+          shipEl.style.top = ly;
           shipEl.textContent = dead ? "⚰️" : "🚢";
+          if (priceEl) {
+            priceEl.style.left = lx;
+            priceEl.style.top = ly;
+            priceEl.textContent = pxFmt(last.mark);
+          }
+          if (first) {
+            void shipEl.offsetWidth; // land the jump before re-arming the glide
+            for (const el of [shipEl, priceEl]) if (el) el.style.transition = "";
+          }
         }
       }
 
@@ -291,6 +319,7 @@
             </div>
             <div class="chartwrap">
               <svg class="spark" id="spark"></svg>
+              <div class="shipprice" id="shipprice"></div>
               <div class="ship" id="ship">🚢</div>
             </div>
           </div>
@@ -298,11 +327,13 @@
             <div class="stat"><div class="k">Time afloat</div><div class="v" id="s_age"></div><div class="sub">since the roll</div></div>
             <div class="stat"><div class="k">The grave</div><div class="v warn" id="s_liq"></div><div class="sub">liquidation price</div></div>
             <div class="stat"><div class="k" id="s_fundk"></div><div class="v" id="s_fund"></div><div class="sub" id="s_fundsub"></div></div>
-            <div class="stat"><div class="k">The purse</div><div class="v" id="s_purse"></div><div class="sub" id="s_marg"></div></div>
+            <div class="stat"><div class="k">The wager</div><div class="v" id="s_notional"></div><div class="sub" id="s_exsub"></div></div>
           </div>`;
       }
 
-      async function render(p, state) {
+      // replayPts: replay mode feeds the chart its own archived points instead
+      // of the live 72h history fetch.
+      async function render(p, state, replayPts) {
         const px = (v) => fmtUsd(v, v < 10 ? 4 : 2);
         const pnlUp = p.unrealizedPnl >= 0;
         if (mode !== "position" || builtCoin !== p.coin) {
@@ -340,19 +371,24 @@
         fund.className = "v " + (fundBleed ? "bleed" : "profit");
         fund.textContent = `${fundBleed ? "−" : "+"}${fmtUsd(Math.abs(p.fundingHourly)).slice(1)}`;
         $("s_fundsub").textContent = `funding, paid so far ${p.fundingPaid >= 0 ? "+" : "−"}${fmtUsd(Math.abs(p.fundingPaid)).slice(1)}`;
-        $("s_purse").textContent = fmtUsd(state.accountValue);
-        $("s_marg").textContent = `margin ${fmtUsd(p.marginUsed, 0)}`;
+        $("s_notional").textContent = fmtUsd(p.notional, 0);
+        $("s_exsub").textContent = `margin ${fmtUsd(p.marginUsed, 0)} · purse ${fmtUsd(state.accountValue, 0)}`;
 
         // chart: persisted <svg>, atomic redraw; refetch the 72h history at most
         // every 20s, just append the live mark in between — no blank flash.
         try {
-          const now = Date.now();
-          if (!histCache || histCoin !== p.coin || now - histAt > 20000) {
-            histCache = await (await fetch(`/api/history?coin=${encodeURIComponent(p.coin)}&hours=72`)).json();
-            histCoin = p.coin; histAt = now;
+          let pts;
+          if (replayPts) {
+            pts = replayPts;
+          } else {
+            const now = Date.now();
+            if (!histCache || histCoin !== p.coin || now - histAt > 20000) {
+              histCache = await (await fetch(`/api/history?coin=${encodeURIComponent(p.coin)}&hours=72`)).json();
+              histCoin = p.coin; histAt = now;
+            }
+            pts = histCache.map((h) => ({ ts: h.ts, mark: h.mark })).filter((h) => h.mark > 0);
+            pts.push({ ts: Date.now(), mark: p.markPx });
           }
-          const pts = histCache.map((h) => ({ ts: h.ts, mark: h.mark })).filter((h) => h.mark > 0);
-          pts.push({ ts: Date.now(), mark: p.markPx });
           pricechart($("spark"), pts, p.entryPx, p.liqPx, p.side, pnlUp, $("ship"), dead);
         } catch {}
       }
@@ -375,8 +411,140 @@
           $("livetxt").textContent = "the candles went out";
         }
       }
-      tick();
-      setInterval(tick, 5000);
+      // ── Replay mode ──────────────────────────────────────────────────────
+      // ?replay[=coin]&closedTs=…&duration=30 plays a finished run back from
+      // the snapshot archive through the exact same renderer, then holds a
+      // verdict card and raises window.__replayDone for the video recorder.
+      // duration=real plays at true 1:1 speed for splicing over an episode.
+      const Q = new URLSearchParams(location.search);
+      const REPLAY = Q.has("replay")
+        ? {
+            coin: Q.get("replay") || null,
+            closedTs: Q.get("closedTs"),
+            duration: Q.get("duration"),
+          }
+        : null;
+
+      async function runReplay() {
+        const txt = $("livetxt");
+        $("livedot").className = "dot standby";
+        txt.textContent = "summoning the archive…";
+        const qp = new URLSearchParams();
+        if (REPLAY.coin) qp.set("coin", REPLAY.coin);
+        if (REPLAY.closedTs) qp.set("closedTs", REPLAY.closedTs);
+        const res = await (await fetch(`/api/replay?${qp}`)).json();
+        if (res.error || !res.snapshots || !res.snapshots.length) {
+          txt.textContent = res.error || "that run left no snapshots behind";
+          document.title = "replay-error";
+          return;
+        }
+        const { run, snapshots } = res;
+
+        // Snapshots don't store size/margin, so fit size from how pnl tracked
+        // the mark's distance from entry (least squares over the whole run).
+        const sgn = run.side === "LONG" ? 1 : -1;
+        let num = 0, den = 0;
+        for (const s of snapshots) {
+          const d = sgn * (s.mark - run.entryPx);
+          num += s.pnl * d;
+          den += d * d;
+        }
+        const size = den > 0 ? Math.max(0, num / den) : 0;
+        const marginUsed = (size * run.entryPx) / (run.leverage || 1);
+        // Liq price from the first snapshot that knew its distance to it
+        // (isolated margin → effectively constant for the life of the run).
+        let liqPx = null;
+        for (const s of snapshots) {
+          if (s.distToLiqPct != null && s.mark > 0) {
+            liqPx = s.mark * (1 + (run.side === "LONG" ? -1 : 1) * s.distToLiqPct / 100);
+            break;
+          }
+        }
+        const first = snapshots[0], last = snapshots[snapshots.length - 1];
+        const hours = Math.max(1 / 60, (last.ts - first.ts) / 3600000);
+        const fundingHourly = (last.fundingPaid - first.fundingPaid) / hours;
+
+        // 1:1 for splicing over the episode, or compressed into N seconds.
+        const runSecs = Math.max(1, (last.ts - first.ts) / 1000);
+        const realtime = REPLAY.duration === "real" || REPLAY.duration === "realtime";
+        const duration = realtime ? runSecs : Math.max(5, Number(REPLAY.duration) || 30);
+
+        // Play the run through the live renderer, sampled to ~10 frames/sec
+        // (realtime keeps every snapshot — they only arrive every poll anyway).
+        const steps = Math.min(snapshots.length, Math.max(2, Math.round(duration * 10)));
+        const idxs = [];
+        for (let i = 0; i < steps; i++) {
+          idxs.push(Math.min(snapshots.length - 1, Math.round((i * (snapshots.length - 1)) / (steps - 1))));
+        }
+        // &stretch tells us the recorder will slow the capture back down by
+        // this factor, so the badge reflects the finished video's speed.
+        const stretch = Math.max(1, Number(Q.get("stretch")) || 1);
+        const speed = Math.max(1, Math.round(runSecs / duration / stretch));
+        txt.textContent = `replay · ${new Date(run.openedTs).toLocaleString()} · ${realtime || speed <= 1 ? "1:1" : `×${speed}`}`;
+        $("livedot").className = "dot";
+
+        // Each frame fires at its snapshot's proportional place on the video
+        // timeline, so playback stays time-faithful even across uneven polls
+        // and dark gaps — that's what keeps a 1:1 render in sync with the pod.
+        // __replayT0 marks the instant of frame 0 so the recorder can trim the
+        // page-load lead-in and report exactly which wall-clock moment t=0 is.
+        window.__replayT0 = Date.now();
+        const wall0 = performance.now();
+        const frameAt = (ts) => ((ts - first.ts) / Math.max(1, last.ts - first.ts)) * duration * 1000;
+        for (let n = 0; n < idxs.length; n++) {
+          const i = idxs[n], s = snapshots[i];
+          await new Promise((r) => setTimeout(r, Math.max(0, frameAt(s.ts) - (performance.now() - wall0))));
+          let drownPct = 0;
+          if (liqPx && run.entryPx > 0) {
+            const cushion = Math.abs(run.entryPx - liqPx);
+            const lossDist = run.side === "LONG" ? run.entryPx - s.mark : s.mark - run.entryPx;
+            if (cushion > 0) drownPct = Math.max(0, Math.min(100, (lossDist / cushion) * 100));
+          }
+          if (n === idxs.length - 1 && run.wasLiquidated) drownPct = 100;
+          const p = {
+            coin: run.coin, dex: "", side: run.side, size,
+            entryPx: run.entryPx, markPx: s.mark, leverage: run.leverage,
+            notional: size * s.mark, unrealizedPnl: s.pnl,
+            roiPct: marginUsed > 0 ? (s.pnl / marginUsed) * 100 : 0,
+            marginUsed, liqPx, distToLiqPct: s.distToLiqPct, drownPct,
+            fundingPaid: s.fundingPaid, fundingHourly,
+            openedTs: run.openedTs, ageMs: s.ts - run.openedTs,
+          };
+          const pts = [];
+          for (let k = 0; k <= i; k++) {
+            if (snapshots[k].mark > 0) pts.push({ ts: snapshots[k].ts, mark: snapshots[k].mark });
+          }
+          await render(p, { accountValue: s.accountValue }, pts);
+        }
+
+        // The epitaph, held long enough for the recording to end on it.
+        const card = document.querySelector(".chartcard");
+        if (card) {
+          const won = run.finalPnl >= 0;
+          const v = document.createElement("div");
+          v.className = "verdict";
+          v.innerHTML =
+            `<div><div class="vword">${run.wasLiquidated ? "⚰️ Liquidated" : won ? "🏆 Survived" : "Cut loose"}</div>
+             <div class="vpnl" style="color:${won ? "var(--profit)" : "var(--blood)"}">${(won ? "+$" : "−$") + fmtUsd(Math.abs(run.finalPnl)).slice(1)}</div>
+             <div class="vsub">${run.side} ${esc(run.coin)} · ${run.leverage}× · afloat ${fmtAge(run.closedTs - run.openedTs)}</div></div>`;
+          card.appendChild(v);
+        }
+        txt.textContent = "replay complete";
+        await new Promise((r) => setTimeout(r, 2500));
+        window.__replayDone = true;
+        document.title = "replay-done";
+      }
+
+      if (REPLAY) {
+        runReplay().catch((e) => {
+          console.error(e);
+          $("livetxt").textContent = "the archive would not speak";
+          document.title = "replay-error";
+        });
+      } else {
+        tick();
+        setInterval(tick, 5000);
+      }
     </script>
   </body>
 </html>

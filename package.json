@@ -9,7 +9,8 @@
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
     "hl": "tsx scripts/hl.ts",
-    "close": "tsx scripts/hl.ts prepare-close"
+    "close": "tsx scripts/hl.ts prepare-close",
+    "render": "tsx scripts/render.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
@@ -19,7 +20,9 @@
     "@msgpack/msgpack": "^3.0.0",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.5",
+    "ffmpeg-static": "^5.3.0",
     "js-sha3": "^0.9.3",
+    "playwright": "^1.61.1",
     "typescript": "^5.7.3"
   }
 }

@@ -22,6 +22,18 @@ export interface OpenPosition {
   openedTs: number;
 }
 
+// A finished saga from the closed log — the unit a replay renders.
+export interface ClosedRun {
+  coin: string;
+  side: string;
+  entryPx: number;
+  leverage: number;
+  openedTs: number;
+  closedTs: number;
+  finalPnl: number;
+  wasLiquidated: number;
+}
+
 export class Store {
   private db: Database.Database;
 
@@ -139,6 +151,38 @@ export class Store {
          FROM snapshots WHERE coin = ? AND ts >= ? ORDER BY ts ASC`,
       )
       .all(coin, sinceTs) as Snapshot[];
+  }
+
+  // Most recent closed run matching the filters — the default replay target.
+  findClosed(coin?: string, closedTs?: number): ClosedRun | undefined {
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+    if (coin) {
+      where.push("coin = ?");
+      params.push(coin);
+    }
+    if (closedTs) {
+      where.push("closed_ts = ?");
+      params.push(closedTs);
+    }
+    return this.db
+      .prepare(
+        `SELECT coin, side, entry_px as entryPx, leverage, opened_ts as openedTs,
+                closed_ts as closedTs, final_pnl as finalPnl, was_liquidated as wasLiquidated
+         FROM closed_position ${where.length ? "WHERE " + where.join(" AND ") : ""}
+         ORDER BY closed_ts DESC LIMIT 1`,
+      )
+      .get(...params) as ClosedRun | undefined;
+  }
+
+  snapshotsBetween(coin: string, t0: number, t1: number): Snapshot[] {
+    return this.db
+      .prepare(
+        `SELECT ts, coin, side, pnl, mark, funding_paid as fundingPaid,
+                dist_liq as distToLiqPct, account_value as accountValue
+         FROM snapshots WHERE coin = ? AND ts >= ? AND ts <= ? ORDER BY ts ASC`,
+      )
+      .all(coin, t0, t1) as Snapshot[];
   }
 
   closedLog(limit = 50) {
