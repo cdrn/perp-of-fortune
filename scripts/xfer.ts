@@ -35,14 +35,16 @@ async function main() {
   const cmd = process.argv[2];
   if (cmd === "prepare") {
     const destinationDex = arg("dex") ?? "xyz";
+    const sourceDex = arg("from") ?? "";
     const amount = arg("amount") ?? "";
     if (!(Number(amount) > 0)) throw new Error("need --amount > 0");
+    if (sourceDex === destinationDex) throw new Error("--from and --dex must differ");
     const nonce = Date.now();
     // message = exactly the EIP-712 fields, in order
     const message = {
       hyperliquidChain: HL_CHAIN,
       destination: SELF,
-      sourceDex: "",
+      sourceDex,
       destinationDex,
       token: USDC,
       amount,
@@ -63,7 +65,7 @@ async function main() {
       message,
     };
     writeFileSync(STASH, JSON.stringify({ action, nonce }));
-    console.log(`[${NET}] prepared: sendAsset $${amount} "" -> ${destinationDex}  (nonce ${nonce})`);
+    console.log(`[${NET}] prepared: sendAsset $${amount} "${sourceDex}" -> "${destinationDex}"  (nonce ${nonce})`);
     console.log(JSON.stringify(typedData));
   } else if (cmd === "send") {
     const sig = arg("sig");
