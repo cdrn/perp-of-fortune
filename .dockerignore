@@ -1,0 +1,11 @@
+.git
+node_modules
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+underpod-episode.json*
+underpod-episodes
+episode-data
+test-results

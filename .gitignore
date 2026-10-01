@@ -5,3 +5,7 @@ dist/
 *.db-*
 .env
 videos/
+underpod-episode.json*
+underpod-episodes/
+episode-data/
+test-results/

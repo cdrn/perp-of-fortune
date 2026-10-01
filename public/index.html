@@ -73,6 +73,49 @@
 
       .stage { display: flex; flex-direction: column; gap: 22px; margin-top: 16px; }
 
+      .episode { margin-top: 24px; }
+      .episode[hidden] { display: none; }
+      .episode-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 14px; }
+      .episode-heading h1 { font-family: "Cinzel", serif; font-size: clamp(19px, 3vw, 27px); color: var(--gold); overflow-wrap: anywhere; }
+      .episode-heading p { margin-top: 5px; color: var(--mute); font-size: 11px; line-height: 1.7; }
+      .episode-feed { flex: 0 0 auto; color: var(--mute); font-size: 10px; }
+      .episode-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; }
+      .episode-card { padding: 22px; min-width: 0; }
+      .episode-card h2 { font-family: "Cinzel", serif; color: var(--parch); font-size: clamp(23px, 4vw, 34px); margin: 8px 0; overflow-wrap: anywhere; }
+      .leg-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+      .leg-role { color: var(--gold-deep); font-size: 10px; line-height: 1.5; letter-spacing: .15em; text-transform: uppercase; }
+      .leg-status { color: var(--gold); font-size: 10px; text-align: right; line-height: 1.5; }
+      .leg-description { color: var(--mute); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+      .leg-description a { color: var(--gold-deep); text-underline-offset: 3px; }
+      .binary-clock { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 15px; }
+      .binary-clock strong { font-size: clamp(25px, 4vw, 38px); color: var(--gold); font-weight: 400; }
+      .binary-clock span { color: var(--mute); font-size: 10px; }
+      .binary-window { margin-top: 5px; color: var(--mute); font-size: 10px; line-height: 1.9; }
+      .binary-fortune { margin-top: 18px; }
+      .binary-fortune .value { font-family: "Cinzel", serif; font-size: clamp(22px, 4vw, 38px); font-weight: 700; line-height: 1.25; margin: 6px 0; }
+      .binary-fortune .value.up { color: var(--profit); }
+      .binary-fortune .value.down { color: var(--blood); }
+      .binary-metrics, .perp-plan { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+      .binary-metrics dt, .perp-plan dt { color: var(--mute); font-size: 10px; line-height: 1.6; }
+      .binary-metrics dd, .perp-plan dd { color: var(--parch); font-size: 15px; margin-top: 4px; overflow-wrap: anywhere; }
+      .leg-note { font-size: 10px; line-height: 1.8; color: var(--mute); margin-top: 16px; }
+      .leg-note.warning { color: var(--ember); }
+      .perp-thesis { font-family: "EB Garamond", serif; font-size: 19px; line-height: 1.55; margin-top: 20px; overflow-wrap: anywhere; }
+      .leg-divider { margin-top: 24px; padding-top: 19px; border-top: 1px solid var(--line); color: var(--gold-deep); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
+      @media (max-width: 640px) {
+        .wrap { padding: 20px 14px 48px; }
+        header { gap: 10px; flex-wrap: wrap; }
+        header .live { width: 100%; text-align: left; font-size: 10px; margin-top: 4px; }
+        .logo { width: 44px; height: 44px; }
+        .logo svg { width: 29px; }
+        .episode-heading { flex-direction: column; gap: 7px; }
+        .episode-grid { grid-template-columns: minmax(0, 1fr); }
+        .episode-card { padding: 18px; }
+        .chartcard { padding: 20px 16px; }
+        .stat { padding: 13px; }
+        .stat .v { font-size: 23px; }
+      }
+
       .card { position: relative; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, rgba(245,197,24,0.05), rgba(4,4,3,0.5)); overflow: hidden; }
       .chartcard { padding: 24px 24px 20px; }
       .pnlrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
@@ -136,21 +179,77 @@
         <div class="titles">
           <div class="eyebrow">Permanent Underpod presents</div>
           <div class="brand">Perp of Fortune</div>
-          <div class="sub">spin the wheel · ride the perp · drown with dignity</div>
+          <div class="sub">one Bitcoin binary · one thematic perp · two fates</div>
         </div>
         <div class="live">
           <span id="livedot" class="dot"></span><span id="livetxt">lighting the candles…</span>
         </div>
       </header>
 
+      <section id="episode" class="episode" aria-label="Paired episode">
+        <div class="episode-heading">
+          <div>
+            <h1 id="episode-theme">Two wagers. One episode.</h1>
+            <p id="episode-description">Preparing the episode: an hourly Bitcoin binary and a perp tied to the show's theme.</p>
+          </div>
+          <span id="episode-feed" class="episode-feed">Finding the episode…</span>
+        </div>
+        <div class="episode-grid">
+          <article class="card episode-card" aria-labelledby="binary-title">
+            <div class="leg-heading"><span class="leg-role">01 · The hourly binary</span><span id="binary-status" class="leg-status">Awaiting selection</span></div>
+            <h2 id="binary-title">Bitcoin · UP or DOWN</h2>
+            <p class="leg-description"><span id="binary-market">An hourly Bitcoin direction market on Polymarket US.</span> <a id="binary-market-link" target="_blank" rel="noopener noreferrer" hidden>Market rules ↗</a></p>
+            <div class="binary-clock"><strong id="binary-countdown">—</strong><span id="binary-clock-label">until the market cutoff</span></div>
+            <p id="binary-window" class="binary-window">The market window and settlement time will appear here.</p>
+            <div class="binary-fortune">
+              <div id="binary-pnl-label" class="leg-role">Position</div>
+              <div id="binary-pnl" class="value">Awaiting execution</div>
+              <p id="binary-roi" class="leg-description">No filled position to value yet.</p>
+            </div>
+            <dl class="binary-metrics">
+              <div><dt>Buy / share</dt><dd id="binary-buy">—</dd></div>
+              <div><dt>Sell / share</dt><dd id="binary-sell">—</dd></div>
+              <div><dt>Budget cap</dt><dd id="binary-budget">—</dd></div>
+              <div><dt>Buy limit / share</dt><dd id="binary-limit">—</dd></div>
+              <div><dt>Filled shares</dt><dd id="binary-shares">—</dd></div>
+              <div><dt>Average fill / share</dt><dd id="binary-average">—</dd></div>
+              <div><dt>Entry fees</dt><dd id="binary-fees">—</dd></div>
+              <div><dt>Cost + entry fees</dt><dd id="binary-cost">—</dd></div>
+              <div><dt id="binary-exit-label">Exit value</dt><dd id="binary-exit">—</dd></div>
+              <div><dt id="binary-payout-label">Payout if this side wins</dt><dd id="binary-payout">—</dd></div>
+            </dl>
+            <p id="binary-note" class="leg-note">A selection is a plan. Shares, payout and P&amp;L appear after a confirmed fill.</p>
+            <p id="binary-error" class="leg-note warning" role="status" hidden></p>
+          </article>
+          <article class="card episode-card" aria-labelledby="perp-plan-title">
+            <div class="leg-heading"><span class="leg-role">02 · The thematic perp</span><span class="leg-status">Hyperliquid</span></div>
+            <h2 id="perp-plan-title">The theme's wild card</h2>
+            <p id="perp-plan-description" class="leg-description">A separate perpetual position selected for this episode.</p>
+            <p id="perp-plan-thesis" class="perp-thesis">The show's theme gives this trade its story. Its live position will appear below.</p>
+            <div class="binary-fortune">
+              <div id="perp-live-label" class="leg-role">Live perp fortune</div>
+              <div id="perp-live-pnl" class="value">Awaiting live position</div>
+              <p id="perp-live-roi" class="leg-description">No matching live position is reported yet.</p>
+            </div>
+            <dl class="perp-plan">
+              <div><dt>Selected leverage</dt><dd id="perp-plan-leverage">—</dd></div>
+              <div><dt>Planned margin</dt><dd id="perp-plan-margin">—</dd></div>
+              <div><dt>Live entry price</dt><dd id="perp-live-entry">—</dd></div>
+              <div><dt>Live mark price</dt><dd id="perp-live-mark">—</dd></div>
+            </dl>
+            <p class="leg-note">The selection above is the episode plan. The live Hyperliquid position below confirms what actually filled.</p>
+          </article>
+        </div>
+        <div class="leg-divider">The perp · live position</div>
+      </section>
       <div id="roll" class="roll"></div>
       <main id="stage"></main>
 
       <footer>
-        <b>The rite.</b> A random asset, side, and leverage were rolled live on the show and cast upon Hyperliquid.
-        The trading key is kept by <b>sigil</b> — it may place orders but <b>cannot withdraw a single coin</b>.
-        So an AI was handed the keys, and still it cannot flee with the purse. This board is read-only; it gazes at
-        Hyperliquid every few seconds and reports what it sees. <span class="fable">Not advice. Obviously.</span>
+        <b>The rite.</b> An hourly Bitcoin binary on Polymarket US joins a thematic perp on Hyperliquid.
+        The Hyperliquid trading key is kept by <b>sigil</b> — that agent key may place orders but <b>cannot withdraw</b>.
+        Polymarket US uses a separate account and credentials. This board is read-only; it reports each venue's
+        available data independently. <span class="fable">Not advice. Obviously.</span>
       </footer>
     </div>
 
@@ -168,7 +267,143 @@
       };
 
       const pxFmt = (v) => fmtUsd(v, v < 10 ? 4 : 2);
-      const esc = (s) => String(s);
+      const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+      const finite = (n) => typeof n === "number" && Number.isFinite(n);
+      const moneyOrDash = (n) => finite(n) ? fmtUsd(n) : "—";
+      const centsOrDash = (n) => finite(n) ? `${(n * 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}¢` : "—";
+      const episodeTime = (ts) => finite(ts)
+        ? new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })
+        : "not provided";
+      const emptyEpisodeMarkup = $("episode").innerHTML;
+      let episodeData = null, episodeLoading = false, livePerpState = null;
+
+      function renderPerpSummary() {
+        const selection = episodeData?.episode?.perp, position = livePerpState?.position;
+        const matches = selection && position && position.coin === selection.coin && position.side.toLowerCase() === selection.side;
+        const known = matches && finite(position.unrealizedPnl);
+        const pnl = $("perp-live-pnl");
+        pnl.className = "value" + (known ? position.unrealizedPnl >= 0 ? " up" : " down" : "");
+        pnl.textContent = known ? `${position.unrealizedPnl >= 0 ? "+" : ""}${fmtUsd(position.unrealizedPnl)}` : "Awaiting live position";
+        $("perp-live-label").textContent = livePerpState?.stale && known ? "Last reported perp fortune · stale" : "Live perp fortune";
+        $("perp-live-roi").textContent = known && finite(position.roiPct)
+          ? `${position.roiPct >= 0 ? "+" : ""}${position.roiPct.toFixed(1)}% on the live position's margin`
+          : "No matching live position is reported yet.";
+        $("perp-live-entry").textContent = matches && finite(position.entryPx) ? pxFmt(position.entryPx) : "—";
+        $("perp-live-mark").textContent = matches && finite(position.markPx) ? pxFmt(position.markPx) : "—";
+      }
+
+      function updateBinaryClock() {
+        const plan = episodeData?.episode?.binary?.market;
+        const binary = episodeData?.binary;
+        if (!plan) return;
+        const start = binary?.startsAt ?? plan.startsAt, end = binary?.endsAt ?? plan.endsAt;
+        const now = Date.now(), upcoming = finite(start) && start > now;
+        if (binary?.status === "settled") {
+          $("binary-countdown").textContent = "Settled";
+          $("binary-clock-label").textContent = "the final result is in";
+        } else if (finite(end) && end <= now) {
+          $("binary-countdown").textContent = "Closed";
+          $("binary-clock-label").textContent = "market cutoff passed · awaiting settlement";
+        } else {
+          const remaining = Math.max(0, (upcoming ? start : end) - now);
+          $("binary-countdown").textContent = finite(remaining) ? fmtAge(remaining) : "—";
+          $("binary-clock-label").textContent = upcoming ? "until the market window opens" : "until the market cutoff";
+        }
+      }
+
+      function renderEpisode(data) {
+        const hadEpisode = Boolean(episodeData?.episode);
+        episodeData = data;
+        const episode = data?.episode, binary = data?.binary;
+        if (!episode) {
+          if (hadEpisode) $("episode").innerHTML = emptyEpisodeMarkup;
+          $("episode-feed").textContent = "No episode prepared";
+          $("binary-error").hidden = true;
+          return;
+        }
+        const plan = episode.binary;
+        $("episode-theme").textContent = episode.theme || "Two wagers. One episode.";
+        $("episode-description").textContent = `Episode window: ${episodeTime(episode.startsAt)} → ${episodeTime(episode.endsAt)}`;
+        $("episode-feed").textContent = binary?.stale ? "Binary data is stale" : "Paired episode selected";
+        $("binary-title").textContent = `Bitcoin · ${(binary?.side || plan.side).toUpperCase()}`;
+        $("binary-market").textContent = binary?.marketTitle || plan.market.title;
+        const marketLink = $("binary-market-link");
+        marketLink.hidden = true;
+        marketLink.removeAttribute("href");
+        try {
+          const url = new URL(binary?.marketUrl);
+          if (url.protocol === "https:" && (url.hostname === "polymarket.us" || url.hostname.endsWith(".polymarket.us"))) {
+            marketLink.href = url.href;
+            marketLink.hidden = false;
+          }
+        } catch {}
+        const statuses = { planned: "Selected · awaiting execution", submitted: "Submitted · awaiting fill", live: "Filled position", awaiting_result: "Result pending", settled: "Settled", unavailable: "Data unavailable" };
+        $("binary-status").textContent = statuses[binary?.status] || "Selected · awaiting execution";
+        const settlement = binary?.settlementAt ?? plan.market.settlementAt;
+        $("binary-window").textContent = `Market: ${episodeTime(binary?.startsAt ?? plan.market.startsAt)} → ${episodeTime(binary?.endsAt ?? plan.market.endsAt)}. Settlement: ${finite(settlement) ? episodeTime(settlement) + " (expected)" : "after the cutoff, when the venue confirms the result"}.`;
+        $("binary-buy").textContent = centsOrDash(binary?.quote?.buyPrice);
+        $("binary-sell").textContent = centsOrDash(binary?.quote?.sellPrice);
+        $("binary-budget").textContent = moneyOrDash(plan.budgetUsd);
+        $("binary-limit").textContent = centsOrDash(plan.limitPrice);
+        const filled = finite(binary?.shares) && binary.shares > 0;
+        const settled = binary?.status === "settled";
+        const pnlKnown = filled && finite(binary.pnlUsd);
+        const pnl = $("binary-pnl");
+        pnl.className = "value" + (pnlKnown ? binary.pnlUsd >= 0 ? " up" : " down" : "");
+        pnl.textContent = pnlKnown ? `${binary.pnlUsd >= 0 ? "+" : ""}${fmtUsd(binary.pnlUsd)}`
+          : filled ? "Value unavailable" : binary?.status === "submitted" ? "Awaiting fill" : "Awaiting execution";
+        $("binary-pnl-label").textContent = filled ? settled ? "Final fortune" : "Binary fortune" : "Position";
+        $("binary-roi").textContent = pnlKnown && finite(binary.roiPct)
+          ? `${binary.roiPct >= 0 ? "+" : ""}${binary.roiPct.toFixed(1)}% on cost including entry fees`
+          : filled ? "P&L appears when the position can be valued." : "No filled position to value yet.";
+        $("binary-shares").textContent = filled ? binary.shares.toLocaleString("en-US", { maximumFractionDigits: 4 }) : "—";
+        $("binary-average").textContent = filled ? centsOrDash(plan.order?.averagePrice) : "—";
+        $("binary-fees").textContent = filled ? moneyOrDash(binary.feesUsd) : "—";
+        $("binary-cost").textContent = filled && finite(binary.costUsd) && finite(binary.feesUsd)
+          ? fmtUsd(binary.costUsd + binary.feesUsd) : "—";
+        $("binary-exit-label").textContent = settled ? "Settlement value" : "Exit value";
+        $("binary-exit").textContent = filled ? moneyOrDash(binary.exitValueUsd) : "—";
+        $("binary-payout").textContent = filled ? moneyOrDash(binary.winPayoutUsd) : "—";
+        $("binary-payout-label").textContent = settled ? "Contract face value" : "Payout if this side wins";
+        const quoteAge = finite(binary?.quote?.updatedAt) ? ` Quote updated ${fmtAge(Math.max(0, Date.now() - binary.quote.updatedAt))} ago.` : "";
+        const holdingsCheckedAt = plan.finalSettlement?.verifiedAt ?? plan.positionCheckedAt ?? plan.order?.updatedAt;
+        const fillSync = filled && finite(holdingsCheckedAt) ? ` Holdings last checked ${episodeTime(holdingsCheckedAt)}.` : "";
+        $("binary-note").textContent = filled
+          ? settled ? `The venue has confirmed the result. Final P&L includes recorded entry fees.${fillSync}`
+            : `P&L includes entry fees, before exit fees. Exit value requires enough shares at the sell quote; quotes and liquidity can change.${quoteAge}${fillSync}`
+          : `A selection is a plan. Shares, payout and P&L appear after a confirmed fill.${quoteAge}`;
+        const problems = [binary?.stale ? "Showing stale binary data." : "", binary?.error || ""].filter(Boolean);
+        $("binary-error").hidden = !problems.length;
+        $("binary-error").textContent = problems.join(" ");
+        $("perp-plan-title").textContent = `${episode.perp.side.toUpperCase()} ${episode.perp.coin}`;
+        $("perp-plan-description").textContent = "Selected for this episode's theme · Hyperliquid";
+        $("perp-plan-thesis").textContent = episode.perp.thesis;
+        $("perp-plan-leverage").textContent = `${episode.perp.leverage}×`;
+        $("perp-plan-margin").textContent = moneyOrDash(episode.perp.marginUsd);
+        renderPerpSummary();
+        updateBinaryClock();
+      }
+
+      async function tickEpisode() {
+        if (episodeLoading) return;
+        episodeLoading = true;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+        try {
+          const response = await fetch("/api/episode", { signal: controller.signal });
+          if (!response.ok) throw new Error("Episode data is temporarily unavailable.");
+          renderEpisode(await response.json());
+        } catch {
+          $("episode-feed").textContent = "Episode feed unavailable";
+          $("binary-error").hidden = false;
+          $("binary-error").textContent = episodeData?.episode
+            ? "Episode updates paused. Displayed binary data may be stale. Reconnecting…"
+            : "Episode data is temporarily unavailable. Reconnecting…";
+        } finally {
+          clearTimeout(timeout);
+          episodeLoading = false;
+        }
+      }
 
       // Mark-price chart with the entry line and the liquidation "bar" — a red
       // danger zone the price drifts toward. The whole point of the show.
@@ -288,7 +523,7 @@
         $("roll").innerHTML = "";
         $("stage").innerHTML =
           `<div class="empty"><div class="big">The dice are uncast</div>
-           <p>No position has been armed. The moment the roll lands on Hyperliquid, the descent begins — and this board lights up.</p></div>`;
+           <p>The thematic perp is awaiting execution. Once its Hyperliquid wallet is connected and the position fills, its live voyage appears here.</p></div>`;
       }
 
       function renderEmpty(state) {
@@ -297,7 +532,7 @@
           $("roll").innerHTML = "";
           $("stage").innerHTML =
             `<div class="empty"><div class="big">No position open</div>
-             <p>The dice haven't been rolled yet — or the last fable already reached its end.</p>
+             <p>The thematic perp has not filled yet — or its voyage has already ended. The episode selection above remains a plan until a position opens.</p>
              <p style="font-style:normal;font-family:'JetBrains Mono',monospace;font-size:13px">The purse: <b id="emptypurse" style="color:var(--gold)"></b></p></div>`;
         }
         $("emptypurse").textContent = fmtUsd(state.accountValue || 0);
@@ -342,7 +577,7 @@
 
         const sideCls = p.side === "LONG" ? "side-long" : "side-short";
         $("roll").innerHTML =
-          `<span class="lead">The roll →</span> <span class="${sideCls}">${p.side} ${p.coin}</span> · ${p.leverage}×` +
+          `<span class="lead">The roll →</span> <span class="${sideCls}">${esc(p.side)} ${esc(p.coin)}</span> · ${esc(p.leverage)}×` +
           `<small>entry ${px(p.entryPx)} · mark ${px(p.markPx)} · size ${p.size.toLocaleString()} · notional ${fmtUsd(p.notional, 0)}</small>`;
 
         const drown = Math.round(p.drownPct);
@@ -396,19 +631,23 @@
       async function tick() {
         try {
           const state = await (await fetch("/api/state")).json();
+          livePerpState = state;
+          renderPerpSummary();
           if (!state.wallet) {
             $("livedot").className = "dot standby";
-            $("livetxt").textContent = "standing by — no wallet armed";
+            $("livetxt").textContent = "perp standing by — no wallet armed";
             return renderStandby();
           }
           const stale = state.stale;
           $("livedot").className = "dot" + (stale ? " stale" : "");
-          $("livetxt").textContent = stale ? "stale — reconnecting" : "live";
+          $("livetxt").textContent = stale ? "perp data stale — reconnecting" : "perp feed live";
           if (state.position) await render(state.position, state);
           else renderEmpty(state);
         } catch {
+          if (livePerpState) livePerpState = { ...livePerpState, stale: true };
+          renderPerpSummary();
           $("livedot").className = "dot stale";
-          $("livetxt").textContent = "the candles went out";
+          $("livetxt").textContent = "perp feed unavailable";
         }
       }
       // ── Replay mode ──────────────────────────────────────────────────────
@@ -526,7 +765,7 @@
           v.innerHTML =
             `<div><div class="vword">${run.wasLiquidated ? "⚰️ Liquidated" : won ? "🏆 Survived" : "Cut loose"}</div>
              <div class="vpnl" style="color:${won ? "var(--profit)" : "var(--blood)"}">${(won ? "+$" : "−$") + fmtUsd(Math.abs(run.finalPnl)).slice(1)}</div>
-             <div class="vsub">${run.side} ${esc(run.coin)} · ${run.leverage}× · afloat ${fmtAge(run.closedTs - run.openedTs)}</div></div>`;
+             <div class="vsub">${esc(run.side)} ${esc(run.coin)} · ${esc(run.leverage)}× · afloat ${fmtAge(run.closedTs - run.openedTs)}</div></div>`;
           card.appendChild(v);
         }
         txt.textContent = "replay complete";
@@ -536,6 +775,7 @@
       }
 
       if (REPLAY) {
+        $("episode").hidden = true;
         runReplay().catch((e) => {
           console.error(e);
           $("livetxt").textContent = "the archive would not speak";
@@ -543,7 +783,10 @@
         });
       } else {
         tick();
+        tickEpisode();
         setInterval(tick, 5000);
+        setInterval(tickEpisode, 5000);
+        setInterval(updateBinaryClock, 1000);
       }
     </script>
   </body>

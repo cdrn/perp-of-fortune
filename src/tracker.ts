@@ -1,4 +1,4 @@
-import { DEXES, POLL_MS, WALLET } from "./config.js";
+import { DEXES, HL_API, POLL_MS, WALLET } from "./config.js";
 import {
   clearinghouseState,
   markAndFunding,
@@ -7,6 +7,7 @@ import {
   type RawPosition,
 } from "./hyperliquid.js";
 import { Store } from "./store.js";
+import { readEpisode } from "./episode.js";
 
 // The derived, dashboard-facing view of the tracked position.
 export interface PositionView {
@@ -156,17 +157,23 @@ export class Tracker {
 
   async tick(): Promise<void> {
     if (!WALLET) return;
+    const episode = readEpisode();
+    const api = episode ? (episode.perpNetwork === "mainnet" ? "https://api.hyperliquid.xyz" : "https://api.hyperliquid-testnet.xyz") : HL_API;
+    this.store.bindScope(`${api}|${WALLET}`, { allowUnscopedHistory: !episode });
+    const episodeDex = episode?.perp.coin.includes(":") ? episode.perp.coin.split(":")[0]! : "";
+    // An episode pins the thematic position, including its builder dex.
+    const scanDexes = [...new Set([...DEXES, ...(episode ? [episodeDex] : [])])];
     const now = Date.now();
     // Scan every configured perp dex (main "" + builder dexes like "xyz"). A
     // roll can land on any of them; we render whichever holds the live position.
     // A dex that isn't listed on this net just drops out of the scan.
     const scans = (
       await Promise.all(
-        DEXES.map(async (dex) => {
+        scanDexes.map(async (dex) => {
           try {
             const [chs, ctx] = await Promise.all([
-              clearinghouseState(WALLET, dex),
-              markAndFunding(dex),
+              clearinghouseState(WALLET, dex, api),
+              markAndFunding(dex, api),
             ]);
             return { dex, chs, ctx };
           } catch (err) {
@@ -178,6 +185,9 @@ export class Tracker {
         }),
       )
     ).filter((s): s is NonNullable<typeof s> => s !== null);
+    if (!scans.length || (episode && !scans.some((s) => s.dex === episodeDex))) {
+      throw new Error("The thematic perp venue could not be refreshed");
+    }
 
     // Every open position across all dexes, tagged with the dex and that dex's
     // own mark/funding + clearinghouse. Largest notional wins — one at a time.
@@ -200,7 +210,7 @@ export class Tracker {
     const getFills = async (): Promise<Fill[]> => {
       if (fillsCache === null) {
         try {
-          fillsCache = await userFills(WALLET);
+          fillsCache = await userFills(WALLET, api);
         } catch {
           fillsCache = [];
         }
@@ -211,12 +221,15 @@ export class Tracker {
     const liveCoins = new Set(candidates.map((c) => c.position.coin));
     // Close out any tracked position that vanished from chain.
     for (const coin of this.store.openCoins()) {
-      if (!liveCoins.has(coin)) {
+      const coinDex = coin.includes(":") ? coin.split(":")[0]! : "";
+      if (scans.some((s) => s.dex === coinDex) && !liveCoins.has(coin)) {
         this.closeTracked(coin, now, await getFills());
       }
     }
 
-    const winner = candidates[0];
+    const winner = episode
+      ? candidates.find((c) => c.position.coin === episode.perp.coin && (Number(c.position.szi) < 0 ? "short" : "long") === episode.perp.side)
+      : candidates[0];
     if (!winner) {
       // Idle: show the best-funded dex's purse so the header isn't empty.
       const primary = scans

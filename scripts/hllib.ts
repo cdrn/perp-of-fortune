@@ -21,6 +21,7 @@ try {
 } catch {}
 
 export const NET = (process.env.HL_NET ?? "testnet").toLowerCase();
+if (NET !== "testnet" && NET !== "mainnet") throw new Error("HL_NET must be testnet or mainnet");
 export const IS_MAINNET = NET === "mainnet";
 export const API = IS_MAINNET
   ? "https://api.hyperliquid.xyz"
@@ -49,15 +50,69 @@ export interface AssetInfo {
   assetId: number;
   szDecimals: number;
   markPx: number;
+  maxLeverage: number;
+}
+
+interface PerpMeta {
+  name: string;
+  szDecimals: number;
+  maxLeverage: number;
+  isDelisted?: boolean;
+}
+
+export function validateLeverage(leverage: number, maxLeverage: number): void {
+  if (!Number.isInteger(maxLeverage) || maxLeverage < 1) {
+    throw new Error("exchange did not provide a valid maximum leverage");
+  }
+  if (!Number.isInteger(leverage) || leverage < 1 || leverage > maxLeverage) {
+    throw new Error(`leverage must be an integer between 1 and ${maxLeverage} (got ${leverage})`);
+  }
+}
+
+export function validateMargin(marginUsd: number): void {
+  if (!Number.isFinite(marginUsd) || marginUsd <= 0) throw new Error("margin must be a finite positive dollar amount");
+}
+
+export function validateSlippage(slippage: number): void {
+  if (!Number.isFinite(slippage) || slippage < 0 || slippage > 0.05) {
+    throw new Error("slippage must be a fraction from 0 through 0.05 (5%)");
+  }
 }
 
 // Tradeable perp names on the current net — so the roll never picks a coin
 // that doesn't exist here (testnet is missing chunks of the mainnet basket).
 export async function universe(): Promise<string[]> {
-  const [meta] = await info<
-    [{ universe: { name: string; isDelisted?: boolean }[] }, unknown]
+  const [meta, ctxs] = await info<
+    [{ universe: PerpMeta[] }, { markPx: string }[]]
   >({ type: "metaAndAssetCtxs" });
-  return meta.universe.filter((u) => !u.isDelisted).map((u) => u.name);
+  return meta.universe.filter((u, i) => !u.isDelisted &&
+    Number.isFinite(Number(ctxs[i]?.markPx)) && Number(ctxs[i]?.markPx) > 0 &&
+    Number.isInteger(u.maxLeverage) && u.maxLeverage >= 1).map((u) => u.name);
+}
+
+// updateLeverage must have actually reached the exchange before sizing an
+// opening order. An intended notional alone does not set the account's mode.
+export async function verifyIsolatedLeverage(user: string, coin: string, expected: number): Promise<void> {
+  const dex = coin.includes(":") ? coin.slice(0, coin.indexOf(":")) : "";
+  type Leverage = { type: string; value: number };
+  const state = await info<{ assetPositions: { position: { coin: string; leverage?: Leverage } }[] }>(
+    dex ? { type: "clearinghouseState", user, dex } : { type: "clearinghouseState", user },
+  );
+  const position = state.assetPositions.find((p) => p.position.coin === coin)?.position;
+  let leverage = position?.leverage;
+  // A new coin may have no clearinghouse position yet. The documented active
+  // asset endpoint exposes its configured leverage before the first order.
+  if (!position) {
+    const active = await info<{ user: string; coin: string; leverage?: Leverage }>({ type: "activeAssetData", user, coin });
+    if (active.user?.toLowerCase() !== user.toLowerCase() || active.coin !== coin) {
+      throw new Error(`cannot verify ${coin} leverage: exchange returned different account or asset`);
+    }
+    leverage = active.leverage;
+  }
+  if (leverage?.type !== "isolated" || leverage.value !== expected) {
+    const actual = leverage ? `${leverage.type} ${leverage.value}×` : "unknown";
+    throw new Error(`${coin} account leverage is ${actual}; sign and send prepare-leverage for isolated ${expected}× first`);
+  }
 }
 
 export interface LivePosition {
@@ -108,16 +163,22 @@ export async function assetInfo(coin: string): Promise<AssetInfo> {
   }
 
   const [meta, ctxs] = await info<
-    [{ universe: { name: string; szDecimals: number }[] }, { markPx: string }[]]
+    [{ universe: PerpMeta[] }, { markPx: string }[]]
   >(isHip3 ? { type: "metaAndAssetCtxs", dex: dexName } : { type: "metaAndAssetCtxs" });
 
   const index = meta.universe.findIndex((u) => u.name === coin);
   if (index < 0) throw new Error(`unknown perp: ${coin} (net=${NET})`);
+  const asset = meta.universe[index]!;
+  if (asset.isDelisted) throw new Error(`delisted perp: ${coin} (net=${NET})`);
+  const markPx = Number(ctxs[index]?.markPx);
+  if (!Number.isFinite(markPx) || markPx <= 0) throw new Error(`no valid mark price for ${coin} (net=${NET})`);
+  validateLeverage(1, asset.maxLeverage);
 
   return {
     assetId: isHip3 ? 100000 + perpDexIndex * 10000 + index : index,
-    szDecimals: meta.universe[index]!.szDecimals,
-    markPx: Number(ctxs[index]!.markPx),
+    szDecimals: asset.szDecimals,
+    markPx,
+    maxLeverage: asset.maxLeverage,
   };
 }
 

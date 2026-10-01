@@ -4,14 +4,18 @@ services:
     container_name: underpod
     restart: unless-stopped
     ports:
-      # bind to loopback only — Caddy reverse-proxies the public vhost
+      # Only the host's loopback interface is exposed.
       - "127.0.0.1:4749:4749"
     volumes:
       - underpod-data:/app/data
+      - ./episode-data:/app/episodes:ro
     environment:
       # set on the host when starting: UNDERPOD_WALLET=0x... docker-compose up -d
       UNDERPOD_WALLET: ${UNDERPOD_WALLET:-}
-      UNDERPOD_DB: /app/data/underpod.db
+      # The container must listen on its bridge interface for the loopback mapping.
+      UNDERPOD_HOST: 0.0.0.0
+      UNDERPOD_DB: ${UNDERPOD_DB:-/app/data/underpod.db}
+      UNDERPOD_EPISODE: /app/episodes/underpod-episode.json
 
 volumes:
   underpod-data:
