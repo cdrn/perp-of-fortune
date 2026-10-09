@@ -3,8 +3,8 @@
 > One hourly Bitcoin binary. One thematic perp. Two fortunes to follow live on the podcast.
 
 A read-only **Underwater-o-meter** dashboard for a paired *Permanent Underpod*
-episode. Every episode selects exactly one **BTC hourly up/down binary on
-Polymarket US** and one **Hyperliquid perp tied to the episode's theme**. The
+episode. Every episode selects exactly one **hourly BTC binary on Hyperliquid
+(HIP-4 outcome markets)** and one **Hyperliquid perp tied to the episode's theme**. The
 binary supplies the timed result; the perp supplies the story, funding bleed,
 and distance to liquidation. The old standalone perp wheel and replay still work.
 
@@ -25,18 +25,19 @@ npm run dev
 ```
 
 Replace the sample date with the actual recording date. Planning only reads
-public markets and saves a local pair; it does not place orders. Both markets
-must be found before anything is saved. Defaults are **$50 for the binary and $50
-of perp margin**, plus perp fees. The binary budget includes entry fees. `--lev max`
-uses the selected perp's current supported maximum. Binary entries must be quoted
-at 40–60 cents; the default maximum price is 60 cents. Omitting `--start` selects
-the next full hour. The binary side is random unless `--binary-side` is provided.
+public markets and saves a local pair; it does not place orders. The binary's
+strike is chosen at entry (`prepare-binary`), from the BTC binaries expiring at the
+end of the hour, picking the one quoted closest to 50 cents with enough depth.
+Defaults are **$50 for the binary and $50 of perp margin**, plus perp fees. Opening
+an outcome position pays no fee; settlement charges the account's fee tier.
+`--lev max` uses the selected perp's current supported maximum. Binary entries must
+be quoted at 40–60 cents; the default maximum price is 60 cents. Omitting `--start`
+selects the next full hour. The binary side is random unless `--binary-side` is
+provided: UP buys YES, DOWN buys NO.
 
-See [EXECUTION.md](EXECUTION.md) for separate preview/approval/send steps. Public
-planning and quotes need no binary credentials. Real orders require an eligible
-Polymarket US account; international Polymarket credentials are incompatible.
-There is no simulated-fill fallback or binary testnet mode. Hyperliquid defaults
-to testnet unless explicitly selected with `HL_NET=mainnet`.
+See [EXECUTION.md](EXECUTION.md) for the prepare/sign/send steps. Both legs use
+the same Hyperliquid account and sigil key, on the episode's network (`HL_NET`,
+default testnet). The binary pays from **spot** USDC, so move margin to spot first.
 
 ## The sigil angle
 
@@ -45,10 +46,8 @@ through a Hyperliquid **API/agent wallet** that has *trade-only* permission — 
 **physically cannot withdraw funds**. So we can hand an AI live trading keys on air
 and it cannot rug the show. That's the whole story, and it's literally true.
 
-That permission claim applies to the Hyperliquid agent key only. Polymarket US
-uses its own authenticated API; verify that key's permissions separately. The
-dashboard submits no orders and never loads binary credentials from `.env`.
-Only the operator receives binary credentials through its environment.
+Both legs are signed by that key. The dashboard holds no keys and submits no
+orders; everything it shows is read from Hyperliquid's public API by address.
 
 ## Run locally
 
@@ -90,8 +89,8 @@ time, real close PnL, liquidations detected from the liquidation fill itself).
 - `src/server.ts` — static dash + `/api/state`, `/api/history`, `/api/closed`.
 - `public/index.html` — the Underwater-o-meter.
 - `scripts/hl.ts` + `scripts/hllib.ts` — operator CLI: roll the wheel, prepare/send orders via sigil. Never imported by the dash.
-- `scripts/episode.ts` — select the pair, preview/submit the binary, reconcile the account.
-- `src/polymarket-us.ts` — exact BTC contract validation, public quotes/settlement and explicit authenticated API client.
+- `scripts/episode.ts` — select the pair, prepare/send the binary via sigil, reconcile the account.
+- `src/hl-outcomes.ts` — HIP-4 outcome discovery (typed template fields only), books, order actions, fills and settlement reads.
 - `src/episode.ts` + `src/episode-tracker.ts` — atomic persistence and binary tracking; selected, filled, awaiting-result and settled states remain distinct.
 
 ## Verification

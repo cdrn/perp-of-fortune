@@ -1,27 +1,30 @@
-// Paired episode operator. Public planning; private preview/send/reconciliation.
-// The dashboard never imports this file and never submits orders.
+// Paired episode operator. Planning reads public data; the binary is a
+// Hyperliquid HIP-4 outcome order signed by sigil (prepare → sign → send),
+// exactly like the perp. The dashboard never imports this file.
 import "../src/config.js";
 import { randomInt, randomUUID } from "node:crypto";
 import { mkdirSync, copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
-import { assetInfo, NET, validateLeverage } from "./hllib.js";
+import { agentTypedData, assetInfo, NET, postExchange, splitSig, validateLeverage } from "./hllib.js";
 import { episodePath, positiveNumber, readEpisode, withEpisodeLock, writeEpisode, type Episode } from "../src/episode.js";
-import { PolymarketUSClient, PolymarketUSHttpError, buildBuyOrder, normalizeOrder, normalizePosition } from "../src/polymarket-us.js";
-import { maximumEntryCost, sizeBinaryOrder, verifyPreview } from "../src/binary-order.js";
+import {
+  apiFor, balanceCoin, bookCoin, buildBuyAction, HLOutcomeClient, newCloid, parseExchangeResult,
+  settlementFromFills, summariseFills, type BinaryMarket, type BinarySide,
+} from "../src/hl-outcomes.js";
+import { ENTRY_CEILING, ENTRY_FLOOR, maximumEntryCost, sizeBinaryOrder } from "../src/binary-order.js";
 
 const { values: args, positionals } = parseArgs({ allowPositionals: true, options: {
   theme: { type: "string" }, coin: { type: "string" }, side: { type: "string" }, thesis: { type: "string" },
   start: { type: "string" }, "binary-side": { type: "string" }, "binary-budget": { type: "string" },
-  "perp-margin": { type: "string" }, lev: { type: "string" }, limit: { type: "string" },
-  confirm: { type: "string" }, "order-id": { type: "string" }, replace: { type: "boolean" },
+  "perp-margin": { type: "string" }, lev: { type: "string" }, limit: { type: "string" }, outcome: { type: "string" },
+  confirm: { type: "string" }, sig: { type: "string" }, replace: { type: "boolean" },
   watch: { type: "boolean" }, json: { type: "boolean" }, help: { type: "boolean" },
 } });
-const client = new PolymarketUSClient();
-const privateClient = () => {
-  if (!process.env.PM_US_API_KEY || !process.env.PM_US_SECRET_KEY) throw new Error("Set PM_US_API_KEY and PM_US_SECRET_KEY in the operator environment; no order has been submitted");
-  return new PolymarketUSClient({ keyId: process.env.PM_US_API_KEY, secretKey: process.env.PM_US_SECRET_KEY });
-};
+const PREPARATION_MS = 120_000;
+const UNFILLED_TERMINAL = /cancel|reject|expire|unfilled/i;
+const HOLDINGS_MISMATCH = "Account holdings differ from this episode's fill receipt. P&L is unavailable until reconciled.";
+
 const required = (name: keyof typeof args): string => {
   const value = args[name];
   if (typeof value !== "string" || !value.trim()) throw new Error(`--${name} is required`);
@@ -33,8 +36,16 @@ const current = (): Episode => {
   return e;
 };
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
-const UNFILLED_TERMINAL = /CANCEL|REJECT|EXPIRE/;
-const HOLDINGS_MISMATCH = "Account holdings differ from this episode's fill receipt. P&L is unavailable until reconciled.";
+const wallet = (): string => {
+  const w = (process.env.UNDERPOD_WALLET ?? "").toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(w)) throw new Error("UNDERPOD_WALLET must be the trading account's address");
+  return w;
+};
+// Signing hashes the network into the payload, so the operator must run on the episode's network.
+const venue = (e: Episode) => {
+  if (e.perpNetwork !== NET) throw new Error(`episode trades on ${e.perpNetwork}; rerun with HL_NET=${e.perpNetwork}`);
+  return new HLOutcomeClient(apiFor(e.perpNetwork));
+};
 
 async function plan() {
   const theme = required("theme"), coin = required("coin"), thesis = required("thesis"), side = required("side");
@@ -45,28 +56,29 @@ async function plan() {
   const startsAt = args.start ? Date.parse(args.start) : Math.ceil(now / 3_600_000) * 3_600_000;
   if (!Number.isFinite(startsAt) || (args.start && !/(Z|[+-]\d\d:\d\d)$/.test(args.start))) throw new Error("--start must be an ISO date with timezone, e.g. 2026-10-02T20:00:00-07:00");
   if (startsAt % 3_600_000 !== 0) throw new Error("Episode start must match a full-hour boundary");
-  const [asset, market] = await Promise.all([
-    assetInfo(coin), client.discoverHourlyBitcoin({ episodeStart: startsAt, targetEnd: startsAt + 3_600_000, allowUpcoming: true }),
-  ]);
+  const endsAt = startsAt + 3_600_000;
+  if (endsAt <= now) throw new Error("That hour has already finished");
+  const limitPrice = Number(args.limit ?? ENTRY_CEILING);
+  const [asset, listed] = await Promise.all([assetInfo(coin), new HLOutcomeClient(apiFor(NET as Episode["perpNetwork"])).binariesAt(endsAt)]);
   const leverage = args.lev && args.lev !== "max" ? Number(args.lev) : asset.maxLeverage;
   validateLeverage(leverage, asset.maxLeverage);
   const e: Episode = {
-    version: 1, id: randomUUID(), createdAt: now, theme, startsAt, endsAt: market.endsAt,
+    version: 1, id: randomUUID(), createdAt: now, theme, startsAt, endsAt,
     perpNetwork: NET as Episode["perpNetwork"],
     perp: { coin, side, leverage, marginUsd: positiveNumber(args["perp-margin"] ?? 50, "Perp margin"), thesis },
-    binary: { market, side: binarySide, budgetUsd: positiveNumber(args["binary-budget"] ?? 50, "Binary budget"), limitPrice: Number(args.limit ?? 0.6) },
+    binary: { side: binarySide, budgetUsd: positiveNumber(args["binary-budget"] ?? 50, "Binary budget"), limitPrice },
   };
   await withEpisodeLock(async () => {
     const existing = readEpisode();
     if (existing) {
       if (!args.replace) throw new Error("An episode already exists. Use --replace to archive it and select another pair.");
       if (["sending", "uncertain"].includes(existing.binary.prepared?.state ?? "")) throw new Error("Reconcile the uncertain binary submission before replacing the episode");
-      if (existing.binary.prepared?.state === "submitted" && (!existing.binary.order || !/FILLED|CANCELED|CANCELLED|REJECTED|EXPIRED/.test(existing.binary.order.status))) throw new Error("Reconcile the submitted binary order to a terminal state before replacing the episode");
-      // A reconciliation error already withholds P&L; after cutoff it must not
-      // also strand the operator, so the episode is archived as-is for review.
-      const withheld = !!existing.binary.reconciliationError && Date.now() >= existing.endsAt;
-      if ((existing.binary.order?.filledShares ?? 0) > 0 && !existing.binary.finalSettlement && !withheld) throw new Error("Confirm the current episode's account settlement before replacing it");
-      if (Date.now() < existing.endsAt && (existing.binary.order?.filledShares ?? 0) > 0) throw new Error("The current binary has filled shares; finish this episode before replacing it");
+      if ((existing.binary.order?.filledShares ?? 0) > 0) {
+        // A reconciliation error already withholds P&L; after cutoff it must not
+        // also strand the operator, so the episode is archived as-is for review.
+        const withheld = !!existing.binary.reconciliationError && Date.now() >= existing.endsAt;
+        if (!existing.binary.finalSettlement && !withheld) throw new Error("Confirm the current episode's account settlement (sync-binary) before replacing it");
+      }
       const archive = join(dirname(episodePath()), "underpod-episodes");
       mkdirSync(archive, { recursive: true, mode: 0o700 });
       copyFileSync(episodePath(), join(archive, `${existing.id}.json`));
@@ -74,156 +86,190 @@ async function plan() {
     writeEpisode(e);
   });
   if (args.json) return print(e);
-  console.log(`Episode ${e.id}\n${theme}\nBTC ${binarySide.toUpperCase()} · Polymarket US · up to $${e.binary.budgetUsd} including entry fees\n${side.toUpperCase()} ${coin} · ${leverage}× isolated · $${e.perp.marginUsd} margin · ${NET}\n${new Date(startsAt).toISOString()} → ${new Date(e.endsAt).toISOString()}\n${thesis}\n\nBoth picks saved; no orders submitted.\nNext: npm run episode -- prepare-binary\nPerp: HL_NET=${NET} npm run hl -- prepare-leverage --episode\nThen sign/send, followed by: HL_NET=${NET} npm run hl -- prepare-order --episode`);
+  const strikes = listed.map((m) => `$${m.threshold.toLocaleString("en-US")} (${m.official ? "Hyperliquid" : m.deployer})`).join(", ");
+  console.log(`Episode ${e.id}\n${theme}\nBTC ${binarySide.toUpperCase()} · Hyperliquid outcome · up to $${e.binary.budgetUsd}, entry ${ENTRY_FLOOR.toFixed(2)}–${limitPrice.toFixed(2)}\n${side.toUpperCase()} ${coin} · ${leverage}× isolated · $${e.perp.marginUsd} margin · ${NET}\n${new Date(startsAt).toISOString()} → ${new Date(endsAt).toISOString()}\n${thesis}\n\nBTC binaries listed for that cutoff so far: ${strikes || "none yet"}. The strike is chosen at entry.\nBoth picks saved; no orders submitted.\nFrom 5 minutes before the hour: HL_NET=${NET} npm run episode -- prepare-binary\nPerp: HL_NET=${NET} npm run hl -- prepare-leverage --episode, sign/send, then prepare-order --episode`);
 }
 
+interface Candidate { market: BinaryMarket; shares: number; buyPrice: number; depth: number }
+
 async function prepare() {
-  const auth = privateClient();
   await withEpisodeLock(async () => {
-    const e = current(), b = e.binary;
-    // An IOC that found no liquidity is over: record it and allow one fresh preparation.
+    const e = current(), b = e.binary, hl = venue(e), user = wallet();
+    // An IOC that found no liquidity is over: record it and allow a fresh preparation.
     if (b.order && b.order.filledShares === 0 && UNFILLED_TERMINAL.test(b.order.status) && b.prepared?.state === "submitted") {
-      b.attempts = [...b.attempts ?? [], { orderId: b.order.id, preparedAt: b.prepared.preparedAt, outcome: "unfilled" }];
+      b.attempts = [...b.attempts ?? [], { orderId: b.order.id, cloid: b.prepared.cloid, preparedAt: b.prepared.preparedAt, outcome: "unfilled" }];
       delete b.order; delete b.prepared; delete b.reconciliationError; delete b.positionCheckedAt;
     }
     if (b.order || b.prepared && b.prepared.state !== "prepared") throw new Error("This episode already has an order/submission; reconcile it instead of preparing a duplicate");
-    const market = await client.discoverHourlyBitcoin({ episodeStart: e.startsAt, targetEnd: e.endsAt });
-    if (market.slug !== b.market.slug) throw new Error("Binary listing changed; review a new episode plan");
-    const quote = await client.getQuote(market.slug, b.side);
-    const shares = sizeBinaryOrder(market, quote, b.budgetUsd, b.limitPrice);
-    const holdings = normalizePosition(await auth.getPositions(market.slug), market.slug, b.side);
-    if (holdings.shares !== 0) throw new Error("This binary market already has an account position; use a separate episode market/account");
-    const request = buildBuyOrder({ marketSlug: market.slug, side: b.side, shares, maxPrice: b.limitPrice, priceTick: market.priceTick, minimumShares: market.minimumShares });
-    verifyPreview(await auth.previewOrder(request), request, b.budgetUsd, market.feeCoefficient!);
-    b.market = market;
-    b.prepared = { shares, limitPrice: b.limitPrice, preparedAt: Date.now(), expiresAt: Math.min(Date.now() + 60_000, market.endsAt), state: "prepared" };
+    let markets = await hl.binariesAt(e.endsAt);
+    if (args.outcome) markets = markets.filter((m) => m.outcome === Number(args.outcome));
+    if (!markets.length) throw new Error(args.outcome ? `Outcome ${args.outcome} is not a BTC binary expiring at this episode's cutoff` : "No BTC binary is listed for this episode's cutoff yet");
+    const candidates: Candidate[] = [], skipped: string[] = [];
+    for (const market of markets) {
+      try {
+        const quote = await hl.getQuote(market.outcome, b.side);
+        const shares = sizeBinaryOrder(e, quote, b.budgetUsd, b.limitPrice);
+        candidates.push({ market, shares, buyPrice: quote.buyPrice!, depth: quote.availableShares });
+      } catch (err) {
+        skipped.push(`  #${market.outcome} $${market.threshold}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    // The closest to a coin flip makes the best hour; depth breaks ties.
+    candidates.sort((x, y) => Math.abs(x.buyPrice - 0.5) - Math.abs(y.buyPrice - 0.5) || y.depth - x.depth);
+    const pick = candidates[0];
+    if (!pick) throw new Error(`No listed BTC binary for this cutoff is enterable right now:\n${skipped.join("\n")}`);
+    const balances = await hl.spotBalances(user);
+    for (const side of ["up", "down"] as BinarySide[]) {
+      if ((balances.get(balanceCoin(pick.market.outcome, side))?.total ?? 0) !== 0) throw new Error("The account already holds this outcome; use a separate market or account");
+    }
+    const usdc = balances.get("USDC");
+    const maxCost = maximumEntryCost(pick.shares, b.limitPrice);
+    if (!usdc || usdc.total - usdc.hold < maxCost) {
+      throw new Error(`Spot USDC ${usdc ? (usdc.total - usdc.hold).toFixed(2) : "0.00"} is below the $${maxCost.toFixed(2)} maximum cost. Move it from perp margin first:\n  HL_NET=${NET} npx tsx scripts/xfer.ts prepare --dex spot --amount ${Math.ceil(maxCost)}`);
+    }
+    const cloid = newCloid(), nonce = Date.now();
+    const action = buildBuyAction({ outcome: pick.market.outcome, side: b.side, shares: pick.shares, limitPrice: b.limitPrice, cloid });
+    b.market = pick.market;
+    b.prepared = { outcome: pick.market.outcome, shares: pick.shares, limitPrice: b.limitPrice, preparedAt: nonce, expiresAt: Math.min(nonce + PREPARATION_MS, e.endsAt), state: "prepared", cloid, action, nonce };
     writeEpisode(e);
-    print({ episodeId: e.id, market: market.title, side: b.side, shares, maximumEntryPrice: b.limitPrice,
-      maximumCostIncludingFee: maximumEntryCost(shares, b.limitPrice, market.feeCoefficient!), budgetUsd: b.budgetUsd,
-      expiresAt: new Date(b.prepared.expiresAt).toISOString(), next: `npm run episode -- send-binary --confirm ${e.id}` });
+    print({
+      episodeId: e.id, market: pick.market.title, outcome: pick.market.outcome, deployer: pick.market.official ? "Hyperliquid" : pick.market.deployer,
+      resolves: pick.market.priceSource, side: b.side === "up" ? "YES (up)" : "NO (down)", bestAsk: pick.buyPrice, shares: pick.shares,
+      limit: b.limitPrice, maximumCost: maxCost, budgetUsd: b.budgetUsd, expiresAt: new Date(b.prepared.expiresAt).toISOString(),
+      ...(skipped.length ? { skipped } : {}),
+    });
+    console.log(`\n  ── sign with sigil_eth_sign_typed_data (portal = the trading key) ──\n`);
+    console.log(JSON.stringify(agentTypedData(action, nonce, null), null, 2));
+    console.log(`\n  then: HL_NET=${NET} npm run episode -- send-binary --sig 0x<signature>\n`);
   });
 }
 
 async function send() {
-  const auth = privateClient();
+  const sig = required("sig");
   await withEpisodeLock(async () => {
-    const e = current(), b = e.binary, p = b.prepared;
-    if (args.confirm !== e.id) throw new Error("Review prepare-binary, then pass --confirm with the exact episode ID");
-    if (!p || p.state !== "prepared" || b.order || Date.now() >= p.expiresAt) throw new Error("No fresh, unsubmitted binary preparation; reconcile an existing send or prepare again");
-    const market = await client.discoverHourlyBitcoin({ episodeStart: e.startsAt, targetEnd: e.endsAt });
-    if (market.slug !== b.market.slug) throw new Error("Binary market no longer matches the prepared episode");
-    const quote = await client.getQuote(market.slug, b.side);
-    if (sizeBinaryOrder(market, quote, b.budgetUsd, p.limitPrice) < p.shares) throw new Error("Binary depth or costs changed; prepare again");
-    if (normalizePosition(await auth.getPositions(market.slug), market.slug, b.side).shares !== 0) throw new Error("Binary account position changed since preview");
-    const request = buildBuyOrder({ marketSlug: market.slug, side: b.side, shares: p.shares, maxPrice: p.limitPrice, priceTick: market.priceTick, minimumShares: market.minimumShares });
-    verifyPreview(await auth.previewOrder(request), request, b.budgetUsd, market.feeCoefficient!);
-    if (Date.now() >= p.expiresAt || Date.now() >= market.endsAt) throw new Error("Binary preparation expired during the final checks; prepare again");
-    if (Date.now() - quote.updatedAt > 15_000) throw new Error("The binary quote expired during preview; prepare again");
+    const e = current(), b = e.binary, p = b.prepared, hl = venue(e);
+    if (!p || p.state !== "prepared" || b.order || !b.market) throw new Error("No fresh, unsubmitted binary preparation; reconcile an existing send or prepare again");
+    if (Date.now() >= p.expiresAt) throw new Error("Binary preparation expired; prepare again");
+    const quote = await hl.getQuote(p.outcome, b.side);
+    if (sizeBinaryOrder(e, quote, b.budgetUsd, p.limitPrice) < p.shares) throw new Error("Binary depth or price changed; prepare again");
     p.state = "sending";
-    writeEpisode(e); // Durable before POST: never retry an ambiguous submission.
-    let response;
+    writeEpisode(e); // Durable before POST: an ambiguous send is reconciled by client order id.
+    let body: unknown;
     try {
-      response = await auth.createOrder(request);
+      body = await postExchange(p.action, p.nonce, splitSig(sig), null);
     } catch (error) {
-      // A 4xx (other than a request timeout) is the venue refusing the request,
-      // so no order exists. Anything else is ambiguous and must be reconciled.
-      if (error instanceof PolymarketUSHttpError && error.status >= 400 && error.status < 500 && error.status !== 408) {
-        b.attempts = [...b.attempts ?? [], { preparedAt: p.preparedAt, outcome: "rejected" }];
+      const message = error instanceof Error ? error.message : String(error);
+      // A 4xx is the exchange refusing the request (bad signature, malformed), so no order exists.
+      if (/^\/exchange 4\d\d/.test(message)) {
+        b.attempts = [...b.attempts ?? [], { cloid: p.cloid, preparedAt: p.preparedAt, outcome: "rejected" }];
         delete b.prepared;
         writeEpisode(e);
-        throw new Error(`Polymarket US rejected the binary order (HTTP ${error.status}); nothing was submitted. Fix the cause, then run prepare-binary again.`);
+        throw new Error(`Hyperliquid rejected the binary order; nothing was submitted. ${message}`);
       }
       p.state = "uncertain";
       writeEpisode(e);
-      throw new Error(`Binary submission needs reconciliation; do not resend. Find the order in Polymarket US and run sync-binary --order-id ID, or abandon-binary once the account shows no trade. ${error instanceof Error ? error.message : "Unknown submission result"}`);
+      throw new Error(`Binary submission needs reconciliation; do not prepare a new order. Run sync-binary (it looks the order up by client id ${p.cloid}), or abandon-binary after two minutes if it never landed. ${message}`);
     }
-    try {
-      if (!response.id) throw new Error("Venue did not return an order ID");
-      p.orderId = response.id; p.state = "submitted"; writeEpisode(e);
-      const receipt = normalizeOrder(await auth.getOrder(response.id), b.side);
-      if (receipt.id !== response.id || receipt.marketSlug !== market.slug) throw new Error("Received a different binary order");
-      b.order = { ...receipt, updatedAt: Date.now() };
+    const result = parseExchangeResult(body);
+    if (result.kind === "rejected" || result.kind === "unfilled") {
+      b.attempts = [...b.attempts ?? [], { cloid: p.cloid, preparedAt: p.preparedAt, outcome: result.kind }];
+      delete b.prepared;
       writeEpisode(e);
-      print({ episodeId: e.id, order: b.order, next: "npm run episode -- sync-binary --watch" });
-    } catch (error) {
-      if (!p.orderId) p.state = "uncertain";
-      writeEpisode(e);
-      throw new Error(`Binary submission needs reconciliation; do not resend. ${p.orderId ? `Order ID: ${p.orderId}. ` : "Find the order in Polymarket US and run sync-binary --order-id ID, or abandon-binary once the account shows no trade. "}${error instanceof Error ? error.message : "Unknown submission result"}`);
+      throw new Error(result.kind === "unfilled"
+        ? `The IOC found no liquidity at or below $${p.limitPrice}; nothing filled. Prepare again. (${result.message})`
+        : `Hyperliquid rejected the binary order; nothing was submitted. ${result.message}`);
     }
+    p.state = "submitted"; p.orderId = String(result.oid);
+    const filledShares = result.kind === "filled" ? result.filledShares : 0;
+    const averagePrice = result.kind === "filled" && filledShares > 0 ? result.averagePrice : null;
+    b.order = {
+      id: String(result.oid), outcome: p.outcome, side: b.side, filledShares, averagePrice,
+      totalCostUsd: averagePrice === null ? 0 : Math.round(filledShares * averagePrice * 1e8) / 1e8,
+      // Opening fills pay no fee; sync-binary confirms from the account's fills.
+      feesUsd: null, status: result.kind === "filled" ? filledShares >= p.shares ? "filled" : "partially filled" : "resting", updatedAt: Date.now(),
+    };
+    writeEpisode(e);
+    print({ episodeId: e.id, order: b.order, next: "npm run episode -- sync-binary" });
   });
 }
 
 async function syncOnce() {
-  const auth = privateClient();
   await withEpisodeLock(async () => {
-    const e = current(), b = e.binary;
-    const id = args["order-id"] ?? b.order?.id ?? b.prepared?.orderId;
-    if (!id) throw new Error("No binary order ID. Recover it from Polymarket US and pass --order-id; do not resubmit an uncertain order.");
-    const knownId = b.order?.id ?? b.prepared?.orderId;
-    if (knownId && knownId !== id) throw new Error("The provided order ID conflicts with the episode's known order");
-    if (b.attempts?.some((a) => a.orderId === id)) throw new Error("That order belongs to an earlier attempt for this episode, not the current submission");
-    const orderResponse = await auth.getOrder(id);
-    const receipt = normalizeOrder(orderResponse, b.side);
-    if (receipt.id !== id || receipt.marketSlug !== b.market.slug) throw new Error("Order ID does not match the selected Bitcoin market");
-    if (!b.prepared || receipt.filledShares > b.prepared.shares + 1e-8 || receipt.averagePrice !== null && receipt.averagePrice > b.prepared.limitPrice + 1e-8) throw new Error("Order does not match the prepared share/price limits");
-    const expected = buildBuyOrder({ marketSlug: b.market.slug, side: b.side, shares: b.prepared.shares, maxPrice: b.prepared.limitPrice, priceTick: b.market.priceTick, minimumShares: b.market.minimumShares });
-    const createdAt = Date.parse(orderResponse.order.createTime ?? orderResponse.order.insertTime ?? "");
-    if (!knownId && Number.isFinite(createdAt) && createdAt < b.prepared.preparedAt - 5_000) throw new Error("Recovered order was created before this preparation; it is not the uncertain submission");
-    if (orderResponse.order.quantity !== expected.quantity || orderResponse.order.price?.currency !== "USD" || Number(orderResponse.order.price.value) !== Number(expected.price.value)) throw new Error("Recovered order differs from the prepared request");
-    const settlement = Date.now() >= e.endsAt ? await client.getSettlement(b.market.slug) : null;
-    const holdings = normalizePosition(await auth.getPositions(b.market.slug), b.market.slug, b.side);
-    // A resolved public market is not proof that this account held the original
-    // shares to settlement. Require the account's position-resolution event.
-    if (settlement !== null && !b.finalSettlement) {
-      const activities = await auth.getActivities(b.market.slug);
-      const resolution = activities.activities.map((a) => a.positionResolution).find((r) => r?.marketSlug === b.market.slug && r.beforePosition);
-      if (resolution?.beforePosition) {
-        const settledShares = normalizePosition({ positions: { [b.market.slug]: resolution.beforePosition }, eof: true }, b.market.slug, b.side).shares;
-        if (Math.abs(settledShares - receipt.filledShares) > 1e-8 || b.reconciliationError) {
-          b.reconciliationError = "Settled account holdings do not match the episode receipt; review the account activity before attributing P&L.";
-        } else {
-          b.finalSettlement = { shares: settledShares, yesValue: settlement, payoutUsd: settledShares * (b.side === "up" ? settlement : 1 - settlement), verifiedAt: Date.now() };
-        }
+    const e = current(), b = e.binary, p = b.prepared, hl = venue(e), user = wallet();
+    if (!p || !b.market) throw new Error("No binary order to reconcile");
+    const status = await hl.orderStatus(user, p.cloid);
+    if (!status) {
+      if (p.state === "submitted") throw new Error("Hyperliquid does not know this episode's order; check the account");
+      return print({ episodeId: e.id, found: false, note: "Order not found by client id. If it stays missing two minutes after the send, run abandon-binary." });
+    }
+    const order = status.order as Record<string, unknown> | undefined;
+    const oid = Number(order?.oid);
+    if (!order || !Number.isInteger(oid) || order.coin !== bookCoin(p.outcome, b.side) || order.side !== "B"
+      || Number(order.origSz) !== p.shares || Number(order.limitPx) !== p.limitPrice || order.cloid !== p.cloid) {
+      throw new Error("The order found by client id does not match the prepared binary order");
+    }
+    if (b.attempts?.some((a) => a.orderId === String(oid))) throw new Error("That order belongs to an earlier attempt for this episode");
+    const coin = bookCoin(p.outcome, b.side);
+    const fills = await hl.fills(user, p.preparedAt - 60_000);
+    const bought = summariseFills(fills, coin, oid);
+    const terminal = /filled|canceled|rejected/i.test(String(status.status));
+    b.order = {
+      id: String(oid), outcome: p.outcome, side: b.side, filledShares: bought.shares, averagePrice: bought.averagePrice,
+      totalCostUsd: bought.costUsd, feesUsd: bought.count || terminal ? bought.feesUsd : null,
+      status: bought.shares === 0 && terminal ? "unfilled" : String(status.status), updatedAt: Date.now(),
+    };
+    p.state = "submitted"; p.orderId = String(oid);
+    const holdings = await hl.holdings(user, p.outcome, b.side);
+    const settleFraction = Date.now() >= e.endsAt ? await hl.getSettlement(p.outcome) : null;
+    const settled = settlementFromFills(fills, coin);
+    if (settleFraction !== null && settled && !b.finalSettlement) {
+      if (Math.abs(settled.shares - bought.shares) > 1e-8 || b.reconciliationError) {
+        b.reconciliationError = "Settled account holdings do not match the episode receipt; review the account fills before attributing P&L.";
+      } else {
+        b.finalSettlement = { shares: settled.shares, yesValue: settleFraction, payoutUsd: settled.payoutUsd, verifiedAt: Date.now() };
       }
-    } else if (settlement === null && Date.now() < e.endsAt) {
-      // Reflect the latest read: a race between the order and positions reads
-      // heals on the next poll, while a real difference at cutoff still sticks.
-      if (Math.abs(holdings.shares - receipt.filledShares) > 1e-8) b.reconciliationError = HOLDINGS_MISMATCH;
+    } else if (settleFraction === null && Date.now() < e.endsAt) {
+      // Reflect the latest read: a race between reads heals on the next poll,
+      // while a real difference at cutoff still sticks.
+      if (Math.abs(holdings - bought.shares) > 1e-8) b.reconciliationError = HOLDINGS_MISMATCH;
       else if (b.reconciliationError === HOLDINGS_MISMATCH) delete b.reconciliationError;
     }
-    // After cutoff, account clearing can remove inventory before the public
-    // gateway publishes the result. Await the position-resolution record above
-    // instead of turning that normal sequencing into a permanent mismatch.
-    // Any mismatch actually observed during trading remains disqualifying.
-    b.order = { ...receipt, updatedAt: Date.now() };
     b.positionCheckedAt = Date.now();
-    b.prepared.state = "submitted"; b.prepared.orderId = id;
     writeEpisode(e);
-    print({ episodeId: e.id, order: b.order, reconciliationError: b.reconciliationError ?? null, resolved: settlement !== null });
+    print({ episodeId: e.id, order: b.order, holdings, reconciliationError: b.reconciliationError ?? null, settleFraction, finalSettlement: b.finalSettlement ?? null });
   });
 }
 
-// Clears an uncertain or crashed submission only once the account proves no order
-// landed: past the IOC's lifetime, no holdings and no trade in this market.
+// Clears an uncertain or crashed send only once Hyperliquid proves no order
+// landed: past the send window, the client id is unknown and nothing is held.
 async function abandon() {
-  const auth = privateClient();
   await withEpisodeLock(async () => {
-    const e = current(), b = e.binary, p = b.prepared;
+    const e = current(), b = e.binary, p = b.prepared, hl = venue(e), user = wallet();
     if (args.confirm !== e.id) throw new Error("Pass --confirm with the exact episode ID to abandon the uncertain submission");
-    if (!p || !["uncertain", "sending"].includes(p.state) || p.orderId || b.order) throw new Error("Only an uncertain submission without an order ID can be abandoned; use sync-binary otherwise");
-    if (Date.now() < p.preparedAt + 120_000) throw new Error("Wait two minutes after the send before abandoning, so an in-flight order can land first");
-    const holdings = normalizePosition(await auth.getPositions(b.market.slug), b.market.slug, b.side);
-    if (holdings.shares !== 0) throw new Error("The account holds this market; recover the order with sync-binary --order-id instead");
-    const activities = await auth.getActivities(b.market.slug);
-    if (activities.activities.some((a) => a.trade)) throw new Error("The account has a trade in this market; recover the order with sync-binary --order-id instead");
-    b.attempts = [...b.attempts ?? [], { preparedAt: p.preparedAt, outcome: "abandoned" }];
+    if (!p || !["uncertain", "sending"].includes(p.state) || p.orderId || b.order) throw new Error("Only an uncertain submission without an order can be abandoned; use sync-binary otherwise");
+    if (Date.now() < p.preparedAt + PREPARATION_MS) throw new Error("Wait two minutes after preparing before abandoning, so an in-flight order can land first");
+    if (await hl.orderStatus(user, p.cloid)) throw new Error("Hyperliquid has this order; run sync-binary instead");
+    if (await hl.holdings(user, p.outcome, b.side) !== 0) throw new Error("The account holds this outcome; run sync-binary instead");
+    b.attempts = [...b.attempts ?? [], { cloid: p.cloid, preparedAt: p.preparedAt, outcome: "abandoned" }];
     delete b.prepared;
     writeEpisode(e);
     print({ episodeId: e.id, abandoned: true, next: "npm run episode -- prepare-binary" });
   });
 }
 
-const usage = `Paired episode: one hourly BTC binary + one thematic perp.\n\n  npm run episode -- plan --theme "Episode theme" --coin SOL --side long --thesis "Why this perp fits" --binary-side up --start 2026-10-02T20:00:00-07:00\n  npm run episode -- show\n  npm run episode -- prepare-binary\n  npm run episode -- send-binary --confirm EPISODE_ID\n  npm run episode -- sync-binary --watch\n  npm run episode -- abandon-binary --confirm EPISODE_ID   (uncertain send with no order on the account)\n\nPlanning is public/read-only. Binary execution requires PM_US_API_KEY and PM_US_SECRET_KEY in the operator environment. Polymarket US is real money; Hyperliquid defaults to testnet. Budgets default to $50 per leg; --binary-budget includes entry fees. --lev defaults to the perp's venue maximum. Binary limit defaults to $0.60; entries below $0.40 are rejected. No trade is placed by plan or show.`;
+const usage = `Paired episode: one hourly BTC binary + one thematic perp, both on Hyperliquid.
+
+  HL_NET=mainnet npm run episode -- plan --theme "Episode theme" --coin SOL --side long --thesis "Why this perp fits" --binary-side up --start 2026-10-02T20:00:00-07:00
+  npm run episode -- show
+  HL_NET=mainnet npm run episode -- prepare-binary [--outcome N]      (from 5 minutes before the hour)
+  # sign the printed typed data with sigil
+  HL_NET=mainnet npm run episode -- send-binary --sig 0x…
+  HL_NET=mainnet npm run episode -- sync-binary [--watch]
+  HL_NET=mainnet npm run episode -- abandon-binary --confirm EPISODE_ID  (uncertain send that never landed)
+
+Budgets default to $50 per leg. --lev defaults to the perp's venue maximum. The binary buys whole YES (up) or NO (down)
+shares with an IOC at --limit (default $0.60); entries quoted below $0.40 are rejected. It pays from spot USDC, so move
+margin to spot first (scripts/xfer.ts --dex spot). plan and show place no trades.`;
 
 async function main() {
   if (args.help) return console.log(usage);

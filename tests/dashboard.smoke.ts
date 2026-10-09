@@ -20,10 +20,9 @@ function episode(now = Date.now()): Episode {
     binary: {
       side: 'down', budgetUsd: 50, limitPrice: 0.55,
       market: {
-        venue: 'polymarket-us', slug: 'fixture-btc-hour', eventSlug: 'fixture-btc-hour',
-        title: 'BTC Up or Down: 60 min', startsAt, endsAt,
-        settlementAt: endsAt + 300_000, rules: 'UP wins at or above the reference price; otherwise DOWN wins.',
-        priceTick: 0.01, minimumShares: 1, feeCoefficient: 0.0695, priceToBeat: 84000, status: 'OPEN',
+        venue: 'hyperliquid', outcome: 10124, title: 'BTC at or above $81,944 at 03:00 UTC', underlying: 'BTC',
+        threshold: 81944, endsAt, deployer: 'skew', official: false, priceSource: 'the Hyperliquid BTC perp trade',
+        rules: 'perp:BTC|threshold:81944', quoteToken: 'USDC',
       },
     },
   };
@@ -31,16 +30,15 @@ function episode(now = Date.now()): Episode {
 
 function quote(now = Date.now()): EpisodeQuote {
   return { buyPrice: .54, sellPrice: .52, availableShares: 1000, sellAvailableShares: 1000,
-    updatedAt: now, status: 'MARKET_STATE_OPEN' };
+    asks: [{ price: .54, size: 1000 }], bids: [{ price: .52, size: 1000 }], updatedAt: now, status: 'open' };
 }
 
 function fill(e: Episode, now = Date.now()): Episode {
   e.binary.order = {
-    id: 'filled-fixture', marketSlug: e.binary.market.slug, side: e.binary.side,
-    filledShares: 90, averagePrice: .5, totalCostUsd: 45, feesUsd: 1.56,
-    status: 'ORDER_STATE_FILLED', updatedAt: now,
+    id: '77', outcome: 10124, side: e.binary.side,
+    filledShares: 90, averagePrice: .5, totalCostUsd: 45, feesUsd: 0,
+    status: 'filled', updatedAt: now,
   };
-  e.binary.positionCheckedAt = now;
   return e;
 }
 
@@ -111,25 +109,34 @@ test('paired dashboard browser smoke checks', { timeout: 90_000 }, async (t) => 
       assert.equal(await text('#binary-title'), 'Bitcoin · DOWN');
       assert.equal(await text('#binary-buy'), '54¢');
       assert.equal(await text('#binary-pnl'), 'Awaiting execution');
-      assert.match(await text('#binary-window'), /Market:.*Settlement:.*expected/);
+      assert.match(await text('#binary-window'), /Window:.*Settles automatically.*Resolves on the Hyperliquid BTC perp trade, listed by skew/);
       assert.match(await text('#binary-countdown'), /\d+m \d+s/);
       assert.equal(await text('#perp-plan-title'), 'LONG TAO');
       assert.equal(await text('#perp-plan-margin'), '$50.00');
     });
+    await t.test('before entry the plan shows without a strike', async () => {
+      const e = episode();
+      delete e.binary.market;
+      episodeResponse = { episode: e, binary: binaryView(e, null, null) };
+      await load();
+      assert.match(await text('#binary-market'), /strike is chosen at entry/);
+      assert.match(await text('#binary-window'), /^Window:/);
+      assert.equal(await text('#binary-pnl'), 'Awaiting execution');
+    });
     await t.test('confirmed fills display entry-fee-inclusive P&L beside a live perp chart', async () => {
       const e = fill(episode());
-      episodeResponse = { episode: e, binary: binaryView(e, quote(), null) };
+      episodeResponse = { episode: e, binary: binaryView(e, quote(), null, Date.now(), { holdings: 90, settlement: null }) };
       state = livePerp;
       await load();
       await page.locator('#pnl').waitFor();
       assert.equal(await text('#binary-shares'), '90');
       assert.equal(await text('#binary-average'), '50¢');
-      assert.equal(await text('#binary-cost'), '$46.56');
-      assert.equal(await text('#binary-fees'), '$1.56');
+      assert.equal(await text('#binary-cost'), '$45.00');
+      assert.equal(await text('#binary-fees'), '$0.00');
       assert.equal(await text('#binary-exit'), '$46.80');
-      assert.equal(await text('#binary-pnl'), '+$0.24');
-      assert.match(await text('#binary-note'), /before exit fees/);
-      assert.match(await text('#binary-note'), /Holdings last checked/);
+      assert.equal(await text('#binary-pnl'), '+$1.80');
+      assert.match(await text('#binary-note'), /before any closing fee/);
+      assert.match(await text('#binary-note'), /read from the account on chain/);
       assert.equal(await text('#pnl'), '+$5.00');
       assert.equal(await text('#perp-live-pnl'), '+$5.00');
       assert.equal(await text('#perp-live-entry'), '$500.00');
@@ -145,7 +152,7 @@ test('paired dashboard browser smoke checks', { timeout: 90_000 }, async (t) => 
       await load();
       assert.equal(await text('#binary-countdown'), 'Settled');
       assert.equal((await text('#binary-pnl-label')).toLowerCase(), 'final fortune');
-      assert.equal(await text('#binary-pnl'), '+$43.44');
+      assert.equal(await text('#binary-pnl'), '+$45.00');
       assert.equal(await text('#binary-exit-label'), 'Settlement value');
       assert.equal(await text('#binary-exit'), '$90.00');
     });
@@ -161,8 +168,7 @@ test('paired dashboard browser smoke checks', { timeout: 90_000 }, async (t) => 
     });
     await t.test('stale reconciliation suppresses valuation without hiding the perp', async () => {
       const e = fill(episode());
-      e.binary.positionCheckedAt = Date.now() - 120_000;
-      episodeResponse = { episode: e, binary: binaryView(e, quote(), null) };
+      episodeResponse = { episode: e, binary: binaryView(e, quote(), null, Date.now(), { holdings: 40, settlement: null }) };
       await load();
       assert.equal(await text('#episode-feed'), 'Binary data is stale');
       assert.equal(await text('#binary-exit'), '—');

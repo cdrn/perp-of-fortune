@@ -198,7 +198,7 @@
           <article class="card episode-card" aria-labelledby="binary-title">
             <div class="leg-heading"><span class="leg-role">01 · The hourly binary</span><span id="binary-status" class="leg-status">Awaiting selection</span></div>
             <h2 id="binary-title">Bitcoin · UP or DOWN</h2>
-            <p class="leg-description"><span id="binary-market">An hourly Bitcoin direction market on Polymarket US.</span> <a id="binary-market-link" target="_blank" rel="noopener noreferrer" hidden>Market rules ↗</a></p>
+            <p class="leg-description"><span id="binary-market">An hourly Bitcoin price binary on Hyperliquid.</span> <a id="binary-market-link" target="_blank" rel="noopener noreferrer" hidden>Market rules ↗</a></p>
             <div class="binary-clock"><strong id="binary-countdown">—</strong><span id="binary-clock-label">until the market cutoff</span></div>
             <p id="binary-window" class="binary-window">The market window and settlement time will appear here.</p>
             <div class="binary-fortune">
@@ -246,10 +246,9 @@
       <main id="stage"></main>
 
       <footer>
-        <b>The rite.</b> An hourly Bitcoin binary on Polymarket US joins a thematic perp on Hyperliquid.
-        The Hyperliquid trading key is kept by <b>sigil</b> — that agent key may place orders but <b>cannot withdraw</b>.
-        Polymarket US uses a separate account and credentials. This board is read-only; it reports each venue's
-        available data independently. <span class="fable">Not advice. Obviously.</span>
+        <b>The rite.</b> An hourly Bitcoin binary joins a thematic perp, both on Hyperliquid.
+        The trading key is kept by <b>sigil</b> — it may place orders but <b>cannot withdraw</b>.
+        This board is read-only; it reads the market and the account straight from the chain. <span class="fable">Not advice. Obviously.</span>
       </footer>
     </div>
 
@@ -293,10 +292,10 @@
       }
 
       function updateBinaryClock() {
-        const plan = episodeData?.episode?.binary?.market;
+        const episode = episodeData?.episode;
         const binary = episodeData?.binary;
-        if (!plan) return;
-        const start = binary?.startsAt ?? plan.startsAt, end = binary?.endsAt ?? plan.endsAt;
+        if (!episode) return;
+        const start = binary?.startsAt ?? episode.startsAt, end = binary?.endsAt ?? episode.endsAt;
         const now = Date.now(), upcoming = finite(start) && start > now;
         if (binary?.status === "settled") {
           $("binary-countdown").textContent = "Settled";
@@ -326,21 +325,13 @@
         $("episode-description").textContent = `Episode window: ${episodeTime(episode.startsAt)} → ${episodeTime(episode.endsAt)}`;
         $("episode-feed").textContent = binary?.stale ? "Binary data is stale" : "Paired episode selected";
         $("binary-title").textContent = `Bitcoin · ${(binary?.side || plan.side).toUpperCase()}`;
-        $("binary-market").textContent = binary?.marketTitle || plan.market.title;
-        const marketLink = $("binary-market-link");
-        marketLink.hidden = true;
-        marketLink.removeAttribute("href");
-        try {
-          const url = new URL(binary?.marketUrl);
-          if (url.protocol === "https:" && (url.hostname === "polymarket.us" || url.hostname.endsWith(".polymarket.us"))) {
-            marketLink.href = url.href;
-            marketLink.hidden = false;
-          }
-        } catch {}
+        const market = plan.market;
+        $("binary-market").textContent = binary?.marketTitle || market?.title || "The strike is chosen at entry: the BTC binary for this hour closest to a coin flip.";
+        $("binary-market-link").hidden = true;
         const statuses = { planned: "Selected · awaiting execution", submitted: "Submitted · awaiting fill", live: "Filled position", awaiting_result: "Result pending", settled: "Settled", unavailable: "Data unavailable" };
         $("binary-status").textContent = statuses[binary?.status] || "Selected · awaiting execution";
-        const settlement = binary?.settlementAt ?? plan.market.settlementAt;
-        $("binary-window").textContent = `Market: ${episodeTime(binary?.startsAt ?? plan.market.startsAt)} → ${episodeTime(binary?.endsAt ?? plan.market.endsAt)}. Settlement: ${finite(settlement) ? episodeTime(settlement) + " (expected)" : "after the cutoff, when the venue confirms the result"}.`;
+        const resolves = market ? ` Resolves on ${market.priceSource}, listed by ${market.official ? "Hyperliquid" : market.deployer}.` : "";
+        $("binary-window").textContent = `Window: ${episodeTime(episode.startsAt)} → ${episodeTime(episode.endsAt)}. Settles automatically at the cutoff.${resolves}`;
         $("binary-buy").textContent = centsOrDash(binary?.quote?.buyPrice);
         $("binary-sell").textContent = centsOrDash(binary?.quote?.sellPrice);
         $("binary-budget").textContent = moneyOrDash(plan.budgetUsd);
@@ -366,11 +357,10 @@
         $("binary-payout").textContent = filled ? moneyOrDash(binary.winPayoutUsd) : "—";
         $("binary-payout-label").textContent = settled ? "Contract face value" : "Payout if this side wins";
         const quoteAge = finite(binary?.quote?.updatedAt) ? ` Quote updated ${fmtAge(Math.max(0, Date.now() - binary.quote.updatedAt))} ago.` : "";
-        const holdingsCheckedAt = plan.finalSettlement?.verifiedAt ?? plan.positionCheckedAt ?? plan.order?.updatedAt;
-        const fillSync = filled && finite(holdingsCheckedAt) ? ` Holdings last checked ${episodeTime(holdingsCheckedAt)}.` : "";
+        const fillSync = filled ? " Holdings are read from the account on chain." : "";
         $("binary-note").textContent = filled
-          ? settled ? `The venue has confirmed the result. Final P&L includes recorded entry fees.${fillSync}`
-            : `P&L includes entry fees, before exit fees. Exit value requires enough shares at the sell quote; quotes and liquidity can change.${quoteAge}${fillSync}`
+          ? settled ? `Hyperliquid has settled the market. Final P&L is net of the settlement fee.${fillSync}`
+            : `P&L is what selling into the bids would return now, before any closing fee. Exit value requires enough shares at the sell quote; quotes and liquidity can change.${quoteAge}${fillSync}`
           : `A selection is a plan. Shares, payout and P&L appear after a confirmed fill.${quoteAge}`;
         const problems = [binary?.stale ? "Showing stale binary data." : "", binary?.error || ""].filter(Boolean);
         $("binary-error").hidden = !problems.length;

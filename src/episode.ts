@@ -1,26 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import type { BinaryMarket, OutcomeOrderAction } from "./hl-outcomes.js";
 
-export interface EpisodeMarket {
-  venue: "polymarket-us";
-  slug: string;
-  eventSlug: string;
-  title: string;
-  startsAt: number;
-  endsAt: number;
-  settlementAt: number | null;
-  rules: string;
-  priceTick: number;
-  minimumShares: number;
-  feeCoefficient: number | null;
-  priceToBeat: number | null;
-  status: string;
-}
+export type EpisodeMarket = BinaryMarket;
 
 export interface BinaryReceipt {
+  /** Hyperliquid order id. */
   id: string;
-  marketSlug: string;
+  outcome: number;
   side: "up" | "down";
   filledShares: number;
   averagePrice: number | null;
@@ -37,10 +25,12 @@ export interface Episode {
   theme: string;
   startsAt: number;
   endsAt: number;
+  /** Both legs trade on this Hyperliquid network. */
   perpNetwork: "mainnet" | "testnet";
   perp: { coin: string; side: "long" | "short"; leverage: number; marginUsd: number; thesis: string };
   binary: {
-    market: EpisodeMarket;
+    /** Chosen at entry: strikes and liquidity for the hour only firm up near the time. */
+    market?: EpisodeMarket;
     side: "up" | "down";
     budgetUsd: number;
     limitPrice: number;
@@ -50,13 +40,19 @@ export interface Episode {
     finalSettlement?: { shares: number; yesValue: number; payoutUsd: number; verifiedAt: number };
     /** Earlier orders for this episode that ended with no fills or never reached the venue.
      * Recovery must never adopt one of these as the current order. */
-    attempts?: { orderId?: string; preparedAt: number; outcome: "unfilled" | "rejected" | "abandoned" }[];
+    attempts?: { orderId?: string; cloid?: string; preparedAt: number; outcome: "unfilled" | "rejected" | "abandoned" }[];
     prepared?: {
+      outcome: number;
       shares: number;
       limitPrice: number;
       preparedAt: number;
       expiresAt: number;
       state: "prepared" | "sending" | "submitted" | "uncertain";
+      /** Client order id: looks the order up exactly after an ambiguous send. */
+      cloid: string;
+      /** The exact action and nonce sigil signs; the nonce makes a replay a no-op. */
+      action: OutcomeOrderAction;
+      nonce: number;
       orderId?: string;
     };
   };
@@ -79,12 +75,13 @@ export function validateEpisode(e: Episode): Episode {
   positiveNumber(e.binary.budgetUsd, "Binary budget");
   if (!Number.isInteger(e.perp.leverage) || e.perp.leverage < 1) throw new Error("Invalid perp leverage");
   if (!(e.binary.limitPrice >= 0.4 && e.binary.limitPrice <= 0.6)) throw new Error("Binary entry limit must be between $0.40 and $0.60");
+  if (!Number.isFinite(e.startsAt) || e.endsAt - e.startsAt !== 3_600_000 || e.startsAt % 3_600_000 !== 0) throw new Error("Episode must be one complete clock hour");
   const m = e.binary.market;
-  if (m.venue !== "polymarket-us" || !m.slug || !m.eventSlug || !m.rules) throw new Error("Invalid binary market");
-  if (!Number.isFinite(m.startsAt) || m.endsAt - m.startsAt !== 3_600_000 || e.startsAt !== m.startsAt || e.endsAt !== m.endsAt) throw new Error("Episode must match one complete hourly binary window");
+  if (m && (m.venue !== "hyperliquid" || !Number.isInteger(m.outcome) || m.endsAt !== e.endsAt || !(m.threshold > 0))) throw new Error("Binary market must be a Hyperliquid BTC binary expiring at the episode cutoff");
+  if (e.binary.prepared && (!m || e.binary.prepared.outcome !== m.outcome)) throw new Error("Prepared binary order does not match the chosen market");
   if (e.binary.order) {
     const o = e.binary.order;
-    if (o.marketSlug !== m.slug || o.side !== e.binary.side || !o.id) throw new Error("Binary receipt does not match this episode");
+    if (!m || o.outcome !== m.outcome || o.side !== e.binary.side || !o.id) throw new Error("Binary receipt does not match this episode");
     for (const n of [o.filledShares, o.totalCostUsd, o.feesUsd]) {
       if (n !== null && (!Number.isFinite(n) || n < 0)) throw new Error("Invalid binary fill accounting");
     }

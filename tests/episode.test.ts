@@ -6,31 +6,32 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readEpisode, writeEpisode, withEpisodeLock, type Episode } from "../src/episode.js";
 import { binaryView, EpisodeTracker, type EpisodeQuote } from "../src/episode-tracker.js";
-import { maximumEntryCost, sizeBinaryOrder, verifyPreview } from "../src/binary-order.js";
-import { buildBuyOrder } from "../src/polymarket-us.js";
+import { maximumEntryCost, sizeBinaryOrder } from "../src/binary-order.js";
 import { Store } from "../src/store.js";
 
-const now = Date.now();
+const HOUR = 3_600_000;
+const start = Math.floor(Date.now() / HOUR) * HOUR;
+const now = start + 120_000;
 function fixture(): Episode {
   return {
-    version: 1, id: "test-episode", createdAt: now, theme: "Infrastructure", startsAt: now - 120_000, endsAt: now + 3_480_000,
+    version: 1, id: "test-episode", createdAt: now, theme: "Infrastructure", startsAt: start, endsAt: start + HOUR,
     perpNetwork: "testnet", perp: { coin: "SOL", side: "long", leverage: 20, marginUsd: 50, thesis: "The episode discusses infrastructure." },
     binary: { side: "down", budgetUsd: 50, limitPrice: 0.6, market: {
-      venue: "polymarket-us", slug: "btc-hourly", eventSlug: "btc-event", title: "BTC Up or Down: 60 min",
-      startsAt: now - 120_000, endsAt: now + 3_480_000, settlementAt: now + 5_280_000, rules: "Venue rules",
-      priceTick: 0.01, minimumShares: 1, feeCoefficient: 0.0695, priceToBeat: 80000, status: "MARKET_STATUS_OPEN",
+      venue: "hyperliquid", outcome: 10124, title: "BTC at or above $81,944", underlying: "BTC", threshold: 81944,
+      endsAt: start + HOUR, deployer: "skew", official: false, priceSource: "the Hyperliquid BTC perp trade", rules: "perp:BTC|threshold:81944", quoteToken: "USDC",
     } },
   };
 }
-function quote(): EpisodeQuote {
-  return { buyPrice: 0.51, sellPrice: 0.49, availableShares: 1000, sellAvailableShares: 1000, updatedAt: now, status: "MARKET_STATE_OPEN" };
+function quote(at = now): EpisodeQuote {
+  return { buyPrice: 0.51, sellPrice: 0.49, availableShares: 1000, sellAvailableShares: 1000,
+    asks: [{ price: 0.51, size: 1000 }], bids: [{ price: 0.49, size: 1000 }], updatedAt: at, status: "open" };
 }
 function filled(): Episode {
   const e = fixture();
-  e.binary.order = { id: "order", marketSlug: e.binary.market.slug, side: "down", filledShares: 80, averagePrice: 0.5, totalCostUsd: 40, feesUsd: 1.39, status: "ORDER_STATE_FILLED", updatedAt: now };
-  e.binary.positionCheckedAt = now;
+  e.binary.order = { id: "77", outcome: 10124, side: "down", filledShares: 80, averagePrice: 0.5, totalCostUsd: 40, feesUsd: 0, status: "filled", updatedAt: now };
   return e;
 }
+const held = (holdings: number | null = 80) => ({ holdings, settlement: null });
 
 test("planning requires both legs and atomically preserves a valid pair", async () => {
   const dir = mkdtempSync(join(tmpdir(), "episode-test-")), path = join(dir, "episode.json");
@@ -40,75 +41,89 @@ test("planning requires both legs and atomically preserves a valid pair", async 
     assert.equal(readEpisode(path)?.perp.coin, "SOL");
     const broken = fixture(); broken.perp.thesis = "";
     assert.throws(() => writeEpisode(broken, path), /thesis/);
-    assert.equal(readEpisode(path)?.binary.market.slug, "btc-hourly");
+    const late = fixture(); late.binary.market!.endsAt += HOUR;
+    assert.throws(() => writeEpisode(late, path), /expiring at the episode cutoff/);
+    const unpicked = fixture(); delete unpicked.binary.market;
+    writeEpisode(unpicked, path);
+    assert.equal(readEpisode(path)?.binary.market, undefined);
     await withEpisodeLock(async () => {
       await assert.rejects(withEpisodeLock(async () => undefined, path), /locked/);
     }, path);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("binary sizing reserves fees, respects depth and rejects late, stale or lopsided markets", () => {
-  const m = fixture().binary.market;
-  const shares = sizeBinaryOrder(m, quote(), 50, 0.6, now);
-  assert.ok(maximumEntryCost(shares, 0.6, m.feeCoefficient!) <= 50);
-  assert.equal(sizeBinaryOrder(m, { ...quote(), availableShares: 3 }, 50, 0.6, now), 3);
-  for (const q of [{ ...quote(), updatedAt: now - 16_000 }, { ...quote(), buyPrice: 0.9 }, { ...quote(), buyPrice: 0.1 }, { ...quote(), status: "MARKET_STATE_CLOSED" }]) {
-    assert.throws(() => sizeBinaryOrder(m, q, 50, 0.6, now));
+test("binary sizing buys whole shares within budget and depth, and rejects late, stale or lopsided books", () => {
+  const e = fixture();
+  const shares = sizeBinaryOrder(e, quote(), 50, 0.6, now);
+  assert.equal(shares, 83);
+  assert.ok(maximumEntryCost(shares, 0.6) <= 50);
+  assert.equal(sizeBinaryOrder(e, { ...quote(), asks: [{ price: 0.51, size: 30 }] }, 50, 0.6, now), 30);
+  for (const q of [quote(now - 16_000), { ...quote(), buyPrice: 0.9 }, { ...quote(), buyPrice: 0.3 }, { ...quote(), status: "empty" as const }]) {
+    assert.throws(() => sizeBinaryOrder(e, q, 50, 0.6, now));
   }
-  assert.throws(() => sizeBinaryOrder({ ...m, feeCoefficient: null }, quote(), 50, 0.6, now), /fee/);
-  assert.throws(() => sizeBinaryOrder(m, quote(), 50, 0.6, m.endsAt), /window/);
+  assert.throws(() => sizeBinaryOrder(e, { ...quote(), asks: [{ price: 0.51, size: 15 }] }, 50, 0.6, now), /\$10 minimum/);
+  assert.throws(() => sizeBinaryOrder(e, quote(start + 16 * 60_000), 50, 0.6, start + 16 * 60_000), /entry window/);
+  assert.throws(() => sizeBinaryOrder(e, quote(start - 6 * 60_000), 50, 0.6, start - 6 * 60_000), /entry window/);
+  assert.throws(() => sizeBinaryOrder(e, quote(), 50, 0.7, now), /limit/);
 });
 
-test("preview validates the DOWN YES-price convention and total budget", () => {
-  const request = buildBuyOrder({ marketSlug: "btc-hourly", side: "down", shares: 80, maxPrice: 0.6 });
-  const response = { order: { ...request, commissionNotionalTotalCollected: { value: "1.39", currency: "USD" } } };
-  assert.equal(request.price.value, "0.4");
-  verifyPreview(response, request, 50, 0.0695);
-  assert.throws(() => verifyPreview({ order: { ...response.order, quantity: 81 } }, request, 50, 0.0695), /match/);
-  assert.throws(() => verifyPreview(response, request, 48, 0.0695), /budget/);
-});
-
-test("unfilled, stale, shallow or unknown-fee receipts do not fabricate usable P&L", () => {
+test("unfilled, stale, shallow or unheld receipts do not fabricate usable P&L", () => {
   assert.equal(binaryView(fixture(), quote(), null, now).pnlUsd, null);
-  assert.ok(Math.abs(binaryView(filled(), quote(), null, now).pnlUsd! - (-2.19)) < 1e-8);
-  assert.equal(binaryView(filled(), { ...quote(), sellAvailableShares: 79 }, null, now).pnlUsd, null);
+  assert.equal(binaryView(filled(), quote(), null, now, held()).pnlUsd, -0.8);
+  assert.equal(binaryView(filled(), { ...quote(), bids: [{ price: 0.49, size: 79 }] }, null, now, held()).pnlUsd, null);
   const noFees = filled(); noFees.binary.order!.feesUsd = null;
-  assert.equal(binaryView(noFees, quote(), null, now).pnlUsd, null);
-  assert.equal(binaryView(filled(), quote(), null, now + 61_000).pnlUsd, null);
+  assert.equal(binaryView(noFees, quote(), null, now, held()).pnlUsd, null);
+  assert.equal(binaryView(filled(), quote(), null, now, held(null)).pnlUsd, null);
+  const sold = binaryView(filled(), quote(), null, now, held(40));
+  assert.equal(sold.pnlUsd, null);
+  assert.equal(sold.stale, true);
+  assert.match(sold.error!, /holdings differ/);
 });
 
 test("public resolution alone cannot claim an account payout or erase external sales", () => {
   const e = filled();
   assert.equal(binaryView(e, null, 0, now).pnlUsd, null);
+  assert.equal(binaryView(e, null, 0, now, { holdings: 0, settlement: { shares: 80, payoutUsd: 79.9 } }).pnlUsd, 39.9);
+  assert.equal(binaryView(e, null, 0, now, { holdings: 0, settlement: { shares: 40, payoutUsd: 39.95 } }).pnlUsd, null);
   e.binary.finalSettlement = { shares: 80, yesValue: 0, payoutUsd: 80, verifiedAt: now };
-  assert.equal(binaryView(e, null, 0, now + 100_000).pnlUsd, 38.61);
+  assert.equal(binaryView(e, null, 0, now).pnlUsd, 40);
   e.binary.reconciliationError = "External sale";
   assert.equal(binaryView(e, null, 0, now).pnlUsd, null);
 });
 
 test("quotes cannot claim executable exit value at or after the binary cutoff", () => {
   const e = filled();
-  e.binary.positionCheckedAt = e.endsAt;
-  const fresh = { ...quote(), updatedAt: e.endsAt };
-  assert.notEqual(binaryView(e, fresh, null, e.endsAt - 1).exitValueUsd, null);
+  const fresh = quote(e.endsAt);
+  assert.notEqual(binaryView(e, fresh, null, e.endsAt - 1, held()).exitValueUsd, null);
   for (const book of [quote(), fresh]) {
-    const view = binaryView(e, book, null, e.endsAt);
+    const view = binaryView(e, book, null, e.endsAt, held());
     assert.equal(view.status, "awaiting_result");
     assert.equal(view.exitValueUsd, null);
     assert.equal(view.pnlUsd, null);
   }
-  assert.equal(binaryView(filled(), { ...quote(), status: "MARKET_STATE_HALTED" }, null, now).exitValueUsd, null);
 });
 
-test("a retired order book cannot suppress a separately confirmed binary result", async () => {
+test("the tracker reads holdings and settlement from the chain without keys", async () => {
   const e = filled();
-  e.endsAt = e.binary.market.endsAt = now - 1;
-  e.binary.finalSettlement = { shares: 80, yesValue: 0, payoutUsd: 80, verifiedAt: now };
-  const tracker = new EpisodeTracker({ getQuote: async () => { throw new Error("Book retired"); }, getSettlement: async () => 0 }, () => e);
+  e.startsAt -= HOUR; e.endsAt -= HOUR; e.binary.market!.endsAt -= HOUR;
+  const tracker = new EpisodeTracker({
+    getQuote: async () => { throw new Error("Book retired"); },
+    getSettlement: async () => 0,
+    spotBalances: async () => new Map([["USDC", { total: 120 }]]),
+    fills: async () => [{ coin: "#101241", px: "1.0", sz: "80.0", side: "A", time: now, dir: "Settlement", oid: 1, fee: "0.1" }],
+  }, () => e, "0x" + "1".repeat(40));
   await tracker.tick();
   assert.equal(tracker.current.binary?.status, "settled");
   assert.equal(tracker.current.binary?.settlementValue, 1);
-  assert.equal(tracker.current.binary?.pnlUsd, 38.61);
+  assert.equal(tracker.current.binary?.pnlUsd, 39.9);
+});
+
+test("before entry the dashboard shows the plan without a market", async () => {
+  const e = fixture(); delete e.binary.market;
+  const tracker = new EpisodeTracker({ getQuote: async () => { throw new Error("unused"); }, getSettlement: async () => null }, () => e);
+  await tracker.tick();
+  assert.equal(tracker.current.binary?.status, "planned");
+  assert.equal(tracker.current.binary?.marketTitle, null);
 });
 
 test("tracker storage cannot mix accounts/networks or reinterpret legacy history", () => {
@@ -165,8 +180,7 @@ test("a flipped episode perp stays visible and closes the old side's row", (t) =
   writeFileSync(episodePath, JSON.stringify({
     version: 1, id: "flip", createdAt: startsAt, theme: "theme", startsAt, endsAt, perpNetwork: "testnet",
     perp: { coin: "SOL", side: "long", leverage: 10, marginUsd: 50, thesis: "thesis" },
-    binary: { side: "up", budgetUsd: 50, limitPrice: 0.5, market: { venue: "polymarket-us", slug: "s", eventSlug: "e", title: "t",
-      startsAt, endsAt, settlementAt: null, rules: "r", priceTick: 0.01, minimumShares: 1, feeCoefficient: 0.07, priceToBeat: null, status: "x" } },
+    binary: { side: "up", budgetUsd: 50, limitPrice: 0.5 },
   }));
   const code = `
     import assert from "node:assert/strict";

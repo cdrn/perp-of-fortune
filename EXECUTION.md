@@ -3,10 +3,8 @@
 ## Default show: Bitcoin binary + thematic perp
 
 Research the episode theme and select one listed Hyperliquid perp with a short
-thesis. Every episode also includes one **hourly BTC up/down contract on
-Polymarket US**, selected using the venue's typed BTC/hourly contract metadata.
-The episode window is the price-measurement window, not the later market expiry.
-Plan close enough to the recording that the venue has listed that window.
+thesis. Every episode also includes one **hourly BTC binary on Hyperliquid**
+(HIP-4 outcome market) that settles at the end of the episode hour.
 
 ```bash
 HL_NET=mainnet npm run episode -- plan \
@@ -20,62 +18,70 @@ npm run episode -- show
 Use the actual recording date/time: a full hour with an explicit timezone.
 Omitting it selects the next hour. Defaults are $50 for the binary and $50 of
 perp margin, plus perp fees; both can be set independently. The binary side is
-random if omitted. Unavailable BTC
-hourly markets produce an error; no other asset/duration/contract is substituted.
-Future preopen windows can be planned but cannot be traded until open. Entry
-preparation needs at least 45 minutes remaining, a 40–60 cent quote and adequate
-depth. `--limit 0.55` tightens the default 60-cent ceiling.
+random if omitted: UP buys YES ("BTC at or above the strike at the cutoff"),
+DOWN buys NO. `plan` lists the BTC binaries already listed for that cutoff but
+does not pick one. `--limit 0.55` tightens the default 60-cent ceiling.
 
 Planning has no financial effect, even with `HL_NET=mainnet`. Each leg follows
-its own approval path. There is no atomic cross-exchange trade: if one leg fails
+its own approval path. There is no atomic trade across the two legs: if one fails
 or partially fills, reconcile it and report the actual state.
 
-### Binary account and execution
+### Which binary
 
-The operator requires an eligible **Polymarket US** account, funds and an API
-key/Ed25519 secret from that account's developer settings. Provide
-`PM_US_API_KEY` and `PM_US_SECRET_KEY` only in the operator environment through a
-secret manager. Never paste them into chat, commands, Git or the dashboard `.env`.
-The Hyperliquid/sigil trade-only permission does not apply to this account;
-verify its permissions separately. Polymarket US orders use real money;
-`HL_NET=testnet` affects only the perp.
+Hyperliquid itself lists a recurring **daily** BTC binary (06:00 UTC). Hourly BTC
+binaries come from permissionless HIP-4 deployers (e.g. `skew`, `out`), are thin
+(often one market maker) and are settled by the deployer against the price source
+in their description. `prepare-binary` considers only BTC price binaries settling
+in USDC exactly at the episode cutoff, sizes each, and picks the one quoted
+closest to 50 cents with enough depth. It prints the deployer and price source;
+say them on air. `--outcome N` pins a specific market. If nothing for the hour is
+enterable, it says why for each strike, and the episode runs perp-only.
+
+### Binary execution
+
+The binary pays from **spot USDC**, not perp margin. Move enough first (the
+preparation prints the exact command if spot is short):
 
 ```bash
-npm run episode -- prepare-binary
-# Review exact market, side, shares, max price and total cost.
-npm run episode -- send-binary --confirm EPISODE_ID
-npm run episode -- sync-binary --watch
+HL_NET=mainnet npx tsx scripts/xfer.ts prepare --dex spot --amount 50
+# sign the typed data with sigil (portal evm:stooge) → HL_NET=mainnet npx tsx scripts/xfer.ts send --sig 0x…
 ```
 
-Preparation checks holdings, reserves fees within the budget, and calls the
-venue's preview; it places no order. Preparations expire after 60 seconds. Send
-rechecks listing/book/holdings/preview, then submits one IOC limit order. DOWN
-orders use the venue's YES-price convention internally. Only confirmed fills
-produce a position; partial or zero fills never become a full-budget position.
-If the IOC finds no liquidity (zero fill), run `prepare-binary` again: the dead
-order is recorded as an earlier attempt and a fresh preparation is allowed.
+Then, from 5 minutes before the hour until 15 minutes after:
 
-Keep `sync-binary --watch` running through account settlement. It authenticates
-only in the operator and writes receipts for the read-only dashboard. If holdings
-differ from this episode's receipt, P&L is withheld; a difference that clears on
-the next poll heals, but one still present at the cutoff stays. A withheld result
-does not block `plan --replace` once the hour is over. Use a dedicated episode
-position; other trades in the same market break attribution. The intended binary
-strategy holds through resolution; manual early exits are not automatically
-attributed to the episode.
+```bash
+HL_NET=mainnet npm run episode -- prepare-binary
+# Review market, deployer, side, shares, limit and maximum cost; sign the printed
+# typed data with sigil_eth_sign_typed_data (portal evm:stooge).
+HL_NET=mainnet npm run episode -- send-binary --sig 0x…
+HL_NET=mainnet npm run episode -- sync-binary
+```
 
-If the venue refuses the order outright (a 4xx such as insufficient balance or an
-ineligible account), nothing was submitted: the preparation is cleared, so fix the
-cause and run `prepare-binary` again.
+Preparation checks the book, spot USDC and existing holdings, and builds one IOC
+buy of whole shares at the limit with a client order id; it places no order.
+Preparations expire after two minutes. Send rechecks the book, records the send
+durably, then posts the signed order. Only confirmed fills produce a position;
+partial fills are recorded as such. If the IOC finds no liquidity, nothing filled:
+run `prepare-binary` again.
 
-If submission times out or crashes, **do not submit again**. Durable state blocks
-a retry. If an ID was recorded, run `sync-binary`; otherwise find the original
-order in Polymarket US and use `sync-binary --order-id ID` (it refuses orders
-created before the preparation or already recorded as earlier attempts). A missing
-receipt does not prove failure. If the account shows no order at all, wait two
-minutes and run `abandon-binary --confirm EPISODE_ID`; it refuses while the
-market has any holdings or trades, then allows a fresh `prepare-binary`. A leftover `.lock` after a crash requires checking that no
-operator is running before removing it; this does not clear an uncertain send.
+If Hyperliquid refuses the order (bad signature, insufficient spot balance), the
+preparation is cleared: fix the cause and prepare again.
+
+If submission times out or crashes, **do not prepare a new order**. Run
+`sync-binary`: it finds the order by its client order id. The signed nonce also
+means the same payload can never execute twice. If the order is still unknown two
+minutes after preparing and the account holds none of the outcome, run
+`abandon-binary --confirm EPISODE_ID`, then prepare again. A leftover `.lock`
+after a crash requires checking that no operator is running before removing it.
+
+The dashboard reads holdings and settlement from the chain itself, so nothing has
+to keep running for it. Run `sync-binary` after the cutoff to record the verified
+payout in the episode file (needed before `plan --replace`). If holdings differ
+from the receipt, P&L is withheld; a difference that clears on the next read
+heals, one still present at the cutoff stays, and a withheld result does not block
+`plan --replace` once the hour is over. Use a dedicated position: other trades in
+the same outcome break attribution. The bit holds through settlement; manual early
+exits are not attributed to the episode.
 
 ### Thematic perp
 
@@ -97,10 +103,11 @@ larger, then follows the same sign/send steps.
 ### During the show
 
 Run `npm run dev`. Both cards remain independent if one feed fails. Binary exit
-value requires sufficient bid depth; live P&L includes entry fees and excludes
-future exit fees. Stale account sync, unknown fees or unverified holdings produce
-no invented P&L. The price cutoff, estimated venue expiry and confirmed account
-settlement are distinct; a public result can appear before verified final P&L.
+value is what selling into the bids would return now, and needs enough bid depth;
+it excludes any closing fee. Stale books, unknown fees or holdings that don't match
+the receipt produce no invented P&L. After the cutoff the public result
+(`settledOutcome`) can appear before the account's own settlement fill; final P&L
+waits for the fill.
 
 Plans/receipts are ignored private local files. `plan --replace` archives the
 previous pair after submission/settlement checks. Legacy SQLite history has no

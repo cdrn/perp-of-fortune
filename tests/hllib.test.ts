@@ -93,17 +93,12 @@ test("episode commands preserve the selected perp, reject overrides and pin the 
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, "episode.json");
   const mock = join(directory, "mock.mjs");
-  const startsAt = 1_000_000;
+  const startsAt = Date.UTC(2026, 9, 1, 20);
   const endsAt = startsAt + 3_600_000;
   const episode: Episode = {
     version: 1, id: "test-episode", createdAt: startsAt, theme: "test theme", startsAt, endsAt,
     perpNetwork: "testnet", perp: { coin: "SOL", side: "short", leverage: 10, marginUsd: 50, thesis: "test thesis" },
-    binary: {
-      side: "up", budgetUsd: 50, limitPrice: 0.5,
-      market: { venue: "polymarket-us", slug: "test-btc", eventSlug: "test-event", title: "BTC Up or Down",
-        startsAt, endsAt, settlementAt: null, rules: "test rules", priceTick: 0.01, minimumShares: 1,
-        feeCoefficient: 0.07, priceToBeat: 100_000, status: "active" },
-    },
+    binary: { side: "up", budgetUsd: 50, limitPrice: 0.5 },
   };
   writeFileSync(path, JSON.stringify(episode));
   // This child process has no live API: unexpected requests fail the test.

@@ -1,10 +1,10 @@
 ---
 name: perp-of-fortune
 description: >
-  Run the paired Perp of Fortune segment: always select one hourly Bitcoin up/down
-  binary on Polymarket US and one thematic Hyperliquid perp, including HIP-3
-  commodities/stocks. Research the theme, save both picks, then use the respective
-  venue's approval/execution path and read-only dashboard. Also supports explicit
+  Run the paired Perp of Fortune segment: always select one hourly Bitcoin binary
+  (Hyperliquid HIP-4 outcome market) and one thematic Hyperliquid perp, including
+  HIP-3 commodities/stocks. Research the theme, save both picks, then prepare →
+  sign with sigil → send each leg, watched on the read-only dashboard. Also supports explicit
   standalone perp close, collateral transfers and Hyperliquid funding.
 ---
 
@@ -16,10 +16,12 @@ description: >
 
 For a new Perp of Fortune episode, prepare **both** of these:
 
-1. One **BTC hourly up/down binary on Polymarket US**, with its price window
-   aligned to the recording hour. Always Bitcoin; never silently substitute a
-   15-minute, daily, range or non-BTC contract. Use official typed market terms,
-   not a title or a model's guess. Keep outcome cutoff and later settlement distinct.
+1. One **BTC hourly binary on Hyperliquid** (HIP-4 outcome market) settling at
+   the end of the recording hour. Always Bitcoin; never silently substitute a
+   daily, touch or non-BTC market. `prepare-binary` picks the strike at entry from
+   typed template fields, closest to 50 cents. Hourly ones come from community
+   deployers: say the deployer and price source on air. If none is enterable, the
+   episode runs perp-only; say so rather than switching format.
 2. One **thematic Hyperliquid perp**, chosen from the episode's topics/news with
    a short, specific thesis. Preserve HIP-3 choices when relevant. Use current
    venue leverage caps; do not claim that max leverage guarantees a 20% move.
@@ -40,27 +42,25 @@ Use the actual recording date and an explicit timezone. If unavailable, report
 the missing listing rather than silently changing format. Planning only reads
 public data; it does not authorize or submit trades. Defaults are $50 for the
 binary and $50 of perp margin, plus perp fees; confirm spending within the user's existing authority
-before real-money execution. Binary entry must be quoted at 40–60 cents, with
-fees reserved inside its budget. Changing the dollar stake does not change the
+before real-money execution. Binary entry must be quoted at 40–60 cents; opening
+pays no fee and settlement charges the account's fee tier. Changing the dollar stake does not change the
 percentage volatility. Choose binary direction and explain it on air, or omit
 `--binary-side` for a recorded random side.
 
-Binary execution: `episode prepare-binary` → review preview →
-`episode send-binary --confirm EPISODE_ID` → `episode sync-binary --watch`.
-The operator needs Polymarket US API credentials in its private environment;
-the dashboard loads public settings only. Do not reuse an international CLOB
-wallet or claim that Hyperliquid's trade-only credential scope applies here.
-There is no binary testnet. Never replay an uncertain send; reconcile the
-recorded order ID (or recover it from the venue) before proceeding. A 4xx refusal
-clears the preparation (nothing was sent); a zero-fill IOC allows a fresh
-`prepare-binary`; an uncertain send with no order on the account is cleared by
-`episode abandon-binary --confirm EPISODE_ID` after two minutes.
+Binary execution (from 5 minutes before the hour to 15 after): make sure spot
+USDC covers the cost (`scripts/xfer.ts prepare --dex spot --amount N`, sign, send)
+→ `HL_NET=mainnet episode prepare-binary` → review market/deployer/shares/max cost
+→ sign the printed typed data with sigil (`evm:stooge`) → `episode send-binary --sig 0x…`
+→ `episode sync-binary` (again after the cutoff to record the payout). Never
+prepare a new order over an uncertain send: `sync-binary` finds it by client order
+id; if it never landed, `episode abandon-binary --confirm EPISODE_ID` after two
+minutes. A refusal or a zero-fill IOC clears the preparation; prepare again.
 
 Perp execution: use `hl prepare-leverage --episode`, sign/send, then
 `hl prepare-order --episode`, sign/send, on the saved network. The CLI verifies
 actual isolated leverage before the opening order. `hl prepare-close --episode`
 pins the same coin. Both legs keep their separate venue approval steps; a failure
-on one venue does not roll back a fill on the other.
+on one leg does not roll back a fill on the other.
 
 Follow [EXECUTION.md](EXECUTION.md) for full account setup, partial-fill,
 reconciliation and settlement handling. Never report a planned ticket or order
@@ -70,8 +70,7 @@ evidence, not merely the public winning outcome.
 A read-only **dashboard** (`src/`, port 4749) + an **operator CLI** (`scripts/`) +
 **sigil** (a local signing daemon holding a *trade-only* Hyperliquid agent wallet,
 `evm:stooge`, which **cannot withdraw**). The dashboard never touches keys.
-Hyperliquid state changes use **prepare → sign (sigil) → send**; the binary uses
-the separate preview/confirm/send flow above.
+Every state change, binary included, is **prepare → sign (sigil) → send**.
 
 This file is the shortcut past everything that was painful the first time. Read the
 "Gotchas" first — they are the whole reason this took hours.
