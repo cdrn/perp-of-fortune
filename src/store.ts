@@ -52,6 +52,7 @@ export class Store {
         account_value REAL NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_snap_ts ON snapshots(ts);
+      CREATE TABLE IF NOT EXISTS tracking_scope (id INTEGER PRIMARY KEY CHECK (id = 1), scope TEXT NOT NULL);
 
       CREATE TABLE IF NOT EXISTS open_position (
         coin TEXT PRIMARY KEY,
@@ -72,6 +73,22 @@ export class Store {
         was_liquidated INTEGER NOT NULL
       );
     `);
+  }
+
+  // Existing scope is enforced even when an episode file has been removed.
+  // Legacy mode may continue reading old, unscoped history, but must not claim
+  // that historical data belongs to its current account/network.
+  bindScope(scope: string, options: { allowUnscopedHistory?: boolean } = {}): void {
+    const previous = this.db.prepare("SELECT scope FROM tracking_scope WHERE id = 1").get() as { scope: string } | undefined;
+    if (previous && previous.scope !== scope) throw new Error("Tracker database belongs to another wallet/network; choose a separate UNDERPOD_DB");
+    if (!previous) {
+      const count = this.db.prepare("SELECT (SELECT COUNT(*) FROM snapshots) + (SELECT COUNT(*) FROM open_position) + (SELECT COUNT(*) FROM closed_position) AS n").get() as { n: number };
+      if (count.n > 0) {
+        if (options.allowUnscopedHistory) return;
+        throw new Error("Legacy tracker history has no wallet/network scope; preserve it and choose a new UNDERPOD_DB for paired episodes");
+      }
+      this.db.prepare("INSERT INTO tracking_scope (id, scope) VALUES (1, ?)").run(scope);
+    }
   }
 
   insertSnapshot(s: Snapshot): void {

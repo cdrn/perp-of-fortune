@@ -1,19 +1,72 @@
 ---
 name: perp-of-fortune
 description: >
-  Run the Perp of Fortune segment — research a pick, then open/close a leveraged
-  Hyperliquid perp (including HIP-3 builder-dex perps like commodities/stocks) with
-  sigil-signed orders, funded from the evm:stooge agent wallet, and watched on the
-  local dashboard. Use when asked to roll/open/close a Perp of Fortune position, move
-  collateral between HL dexes, or bridge USDC into Hyperliquid.
+  Run the paired Perp of Fortune segment: always select one hourly Bitcoin up/down
+  binary on Polymarket US and one thematic Hyperliquid perp, including HIP-3
+  commodities/stocks. Research the theme, save both picks, then use the respective
+  venue's approval/execution path and read-only dashboard. Also supports explicit
+  standalone perp close, collateral transfers and Hyperliquid funding.
 ---
 
 # Perp of Fortune — agent runbook
 
+## Default episode format: always two picks
+
+For a new Perp of Fortune episode, prepare **both** of these:
+
+1. One **BTC hourly up/down binary on Polymarket US**, with its price window
+   aligned to the recording hour. Always Bitcoin; never silently substitute a
+   15-minute, daily, range or non-BTC contract. Use official typed market terms,
+   not a title or a model's guess. Keep outcome cutoff and later settlement distinct.
+2. One **thematic Hyperliquid perp**, chosen from the episode's topics/news with
+   a short, specific thesis. Preserve HIP-3 choices when relevant. Use current
+   venue leverage caps; do not claim that max leverage guarantees a 20% move.
+
+The saved episode binds the exact two selections. A larger unrelated perp must
+never replace the thematic pick on the dashboard. This default does not add a
+new binary when the user only asks to close/manage an existing standalone perp.
+
+```bash
+HL_NET=mainnet npm run episode -- plan \
+  --theme "Episode theme" --coin SOL --side long \
+  --thesis "Why this market connects to the episode" \
+  --binary-side up --start 2026-10-02T20:00:00-07:00 \
+  --binary-budget 50 --perp-margin 50 --lev max
+```
+
+Use the actual recording date and an explicit timezone. If unavailable, report
+the missing listing rather than silently changing format. Planning only reads
+public data; it does not authorize or submit trades. Defaults are $50 for the
+binary and $50 of perp margin, plus perp fees; confirm spending within the user's existing authority
+before real-money execution. Binary entry must be quoted at 40–60 cents, with
+fees reserved inside its budget. Changing the dollar stake does not change the
+percentage volatility. Choose binary direction and explain it on air, or omit
+`--binary-side` for a recorded random side.
+
+Binary execution: `episode prepare-binary` → review preview →
+`episode send-binary --confirm EPISODE_ID` → `episode sync-binary --watch`.
+The operator needs Polymarket US API credentials in its private environment;
+the dashboard loads public settings only. Do not reuse an international CLOB
+wallet or claim that Hyperliquid's trade-only credential scope applies here.
+There is no binary testnet. Never replay an uncertain send; reconcile the
+recorded order ID (or recover it from the venue) before proceeding.
+
+Perp execution: use `hl prepare-leverage --episode`, sign/send, then
+`hl prepare-order --episode`, sign/send, on the saved network. The CLI verifies
+actual isolated leverage before the opening order. `hl prepare-close --episode`
+pins the same coin. Both legs keep their separate venue approval steps; a failure
+on one venue does not roll back a fill on the other.
+
+Follow [EXECUTION.md](EXECUTION.md) for full account setup, partial-fill,
+reconciliation and settlement handling. Never report a planned ticket or order
+acknowledgment as an actual fill. Final binary P&L needs account resolution
+evidence, not merely the public winning outcome.
+
 A read-only **dashboard** (`src/`, port 4749) + an **operator CLI** (`scripts/`) +
 **sigil** (a local signing daemon holding a *trade-only* Hyperliquid agent wallet,
-`evm:stooge`, which **cannot withdraw**). The dashboard never touches keys. Every
-state change is **prepare → sign (sigil) → send**.
+`evm:stooge`, which **cannot withdraw**). The dashboard never touches keys.
+Hyperliquid state changes use **prepare → sign (sigil) → send**; the binary uses
+the separate preview/confirm/send flow above.
 
 This file is the shortcut past everything that was painful the first time. Read the
 "Gotchas" first — they are the whole reason this took hours.
@@ -74,7 +127,7 @@ This file is the shortcut past everything that was painful the first time. Read 
 
 ## Playbook
 
-0. **Research + pick.** News + price history (e.g. `candleSnapshot`). State a short
+0. **Research + pick the thematic leg.** News + price history (e.g. `candleSnapshot`). State a short
    thesis. Choose coin / side / **max** leverage. Universe includes HIP-3 (`perpDexs`,
    `metaAndAssetCtxs {dex}`).
 1. **Collateral onto the trading dex.** If the pick is a HIP-3 perp (e.g. `xyz:CL`), that

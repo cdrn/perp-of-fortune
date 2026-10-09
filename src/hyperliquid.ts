@@ -2,11 +2,12 @@ import { HL_API } from "./config.js";
 
 // Thin read client for Hyperliquid's public /info endpoint. One POST per query
 // type; no auth. (The same endpoint backdraft's funding module already polls.)
-async function info<T>(body: unknown): Promise<T> {
-  const res = await fetch(`${HL_API}/info`, {
+async function info<T>(body: unknown, api = HL_API): Promise<T> {
+  const res = await fetch(`${api}/info`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`hyperliquid /info ${res.status}`);
   return (await res.json()) as T;
@@ -34,9 +35,9 @@ export interface ClearinghouseState {
   withdrawable: string;
 }
 
-export function clearinghouseState(user: string, dex = ""): Promise<ClearinghouseState> {
+export function clearinghouseState(user: string, dex = "", api = HL_API): Promise<ClearinghouseState> {
   return info<ClearinghouseState>(
-    dex ? { type: "clearinghouseState", user, dex } : { type: "clearinghouseState", user },
+    dex ? { type: "clearinghouseState", user, dex } : { type: "clearinghouseState", user }, api,
   );
 }
 
@@ -54,8 +55,8 @@ export interface Fill {
   liquidation?: { liquidatedUser: string; markPx: string; method: string };
 }
 
-export function userFills(user: string): Promise<Fill[]> {
-  return info<Fill[]>({ type: "userFills", user });
+export function userFills(user: string, api = HL_API): Promise<Fill[]> {
+  return info<Fill[]>({ type: "userFills", user }, api);
 }
 
 interface AssetCtx {
@@ -64,12 +65,12 @@ interface AssetCtx {
   oraclePx: string;
 }
 
-export async function markAndFunding(dex = ""): Promise<
+export async function markAndFunding(dex = "", api = HL_API): Promise<
   Map<string, { markPx: number; funding: number }>
 > {
   const [meta, ctxs] = await info<
     [{ universe: { name: string }[] }, AssetCtx[]]
-  >(dex ? { type: "metaAndAssetCtxs", dex } : { type: "metaAndAssetCtxs" });
+  >(dex ? { type: "metaAndAssetCtxs", dex } : { type: "metaAndAssetCtxs" }, api);
   const out = new Map<string, { markPx: number; funding: number }>();
   for (let i = 0; i < meta.universe.length; i++) {
     const name = meta.universe[i]?.name;

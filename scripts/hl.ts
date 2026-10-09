@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
 import jsSha3 from "js-sha3";
+import { readEpisode, type Episode } from "../src/episode.js";
 import {
   agentTypedData,
   assetInfo,
@@ -26,6 +27,10 @@ import {
   postExchange,
   splitSig,
   universe,
+  validateLeverage,
+  validateMargin,
+  validateSlippage,
+  verifyIsolatedLeverage,
 } from "./hllib.js";
 const { keccak256 } = jsSha3;
 
@@ -34,7 +39,39 @@ const TD_FILE = join(tmpdir(), "underpod-hl-typeddata.json");
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const value = process.argv[i + 1];
+  if (!value || value.startsWith("--")) {
+    if (name === "episode") return undefined; // --episode alone uses the configured path
+    throw new Error(`--${name} needs a value`);
+  }
+  return value;
+}
+
+function episodePerp(): Episode["perp"] | null {
+  if (!process.argv.includes("--episode")) return null;
+  const episode = readEpisode(arg("episode"));
+  if (!episode) throw new Error("no saved episode; create an episode plan first");
+  if (episode.perpNetwork !== NET) {
+    throw new Error(`episode perp uses ${episode.perpNetwork}; rerun with HL_NET=${episode.perpNetwork}`);
+  }
+  for (const [flag, selected] of Object.entries({
+    coin: episode.perp.coin, side: episode.perp.side, usd: episode.perp.marginUsd, lev: episode.perp.leverage,
+  })) {
+    const supplied = arg(flag);
+    if (supplied !== undefined && (typeof selected === "number" ? Number(supplied) !== selected : supplied !== selected)) {
+      throw new Error(`--${flag} conflicts with the saved episode (${selected})`);
+    }
+  }
+  return episode.perp;
+}
+
+function tradingWallet(): string {
+  const wallet = (arg("wallet") ?? process.env.UNDERPOD_WALLET ?? "").toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
+    throw new Error("need the trading account's address: --wallet 0x… or UNDERPOD_WALLET in .env");
+  }
+  return wallet;
 }
 
 // A basket weighted toward chaos. The wheel picks coin / side / leverage.
@@ -67,49 +104,61 @@ async function roll(): Promise<void> {
   }
   const coin = basket[picks[0]! % basket.length]!;
   const side = picks[1]! % 2 === 0 ? "long" : "short";
-  const lev = LEV_WHEEL[picks[2]! % LEV_WHEEL.length]!;
+  const { maxLeverage } = await assetInfo(coin);
+  const allowedLeverage = LEV_WHEEL.filter((lev) => lev <= maxLeverage);
+  if (!allowedLeverage.length) allowedLeverage.push(1);
+  const lev = allowedLeverage[picks[2]! % allowedLeverage.length]!;
 
   console.log(`\n  🎡  THE WHEEL HAS SPOKEN\n`);
   console.log(`      ${side.toUpperCase()} ${coin}  ·  ${lev}×\n`);
   if (provenance) console.log(provenance);
   console.log(`  next (note the -- separator so npm forwards the flags):`);
-  console.log(`    npm run hl -- prepare-leverage --coin ${coin} --lev ${lev}`);
-  console.log(`    npm run hl -- prepare-order --coin ${coin} --side ${side} --usd 50 --lev ${lev}\n`);
+  console.log(`    HL_NET=${NET} npm run hl -- prepare-leverage --coin ${coin} --lev ${lev}`);
+  console.log(`    HL_NET=${NET} npm run hl -- prepare-order --coin ${coin} --side ${side} --usd 50 --lev ${lev}\n`);
 }
 
 function emitTypedData(label: string, action: unknown, nonce: number): void {
   const td = agentTypedData(action, nonce, null);
-  writeFileSync(STASH, JSON.stringify({ label, action, nonce, vaultAddress: null }, null, 2));
+  writeFileSync(STASH, JSON.stringify({ label, action, nonce, vaultAddress: null, network: NET }, null, 2));
   writeFileSync(TD_FILE, JSON.stringify(td)); // exact object to hand to sigil
   console.log(`\n  [${NET}] prepared: ${label}`);
   console.log(`  stashed action+nonce → ${STASH}\n`);
   console.log(`  ── hand this to sigil_eth_sign_typed_data (portal = the trading key) ──\n`);
   console.log(JSON.stringify(td, null, 2));
-  console.log(`\n  then: npm run hl -- send --sig 0x<signature>\n`);
+  console.log(`\n  then: HL_NET=${NET} npm run hl -- send --sig 0x<signature>\n`);
 }
 
 async function prepareLeverage(): Promise<void> {
-  const coin = arg("coin");
-  const lev = Number(arg("lev"));
-  if (!coin || !lev) throw new Error("need --coin and --lev");
-  const { assetId } = await assetInfo(coin);
+  const perp = episodePerp();
+  const coin = perp?.coin ?? arg("coin");
+  const lev = perp?.leverage ?? Number(arg("lev"));
+  if (!coin) throw new Error("need --coin and --lev, or --episode");
+  const { assetId, maxLeverage } = await assetInfo(coin);
+  validateLeverage(lev, maxLeverage);
   // isolated margin so the liquidation maths are clean and dramatic
   const action = { type: "updateLeverage", asset: assetId, isCross: false, leverage: lev };
   emitTypedData(`set ${coin} isolated leverage ${lev}×`, action, Date.now());
 }
 
 async function prepareOrder(): Promise<void> {
-  const coin = arg("coin");
-  const side = arg("side");
-  const usd = Number(arg("usd") ?? 50); // margin to commit
-  const lev = Number(arg("lev") ?? 1);
-  const slip = Number(arg("slippage") ?? 0.05);
+  const perp = episodePerp();
+  const coin = perp?.coin ?? arg("coin");
+  const side = perp?.side ?? arg("side");
+  const usd = perp?.marginUsd ?? Number(arg("usd") ?? 50); // intended margin at mark
+  const lev = perp?.leverage ?? Number(arg("lev") ?? 1);
+  const slip = Number(arg("slippage") ?? 0.005);
   if (!coin || (side !== "long" && side !== "short")) {
     throw new Error("need --coin and --side long|short");
   }
-  const { assetId, szDecimals, markPx } = await assetInfo(coin);
+  validateMargin(usd);
+  validateSlippage(slip);
+  const wallet = tradingWallet();
+  const { assetId, szDecimals, markPx, maxLeverage } = await assetInfo(coin);
+  validateLeverage(lev, maxLeverage);
+  await verifyIsolatedLeverage(wallet, coin, lev);
   const isBuy = side === "long";
   const notional = usd * lev;
+  if (!Number.isFinite(notional)) throw new Error("order notional must be finite");
   if (notional < 10) throw new Error(`HL minimum order value is $10 notional (got $${notional})`);
   const size = formatSize(notional / markPx, szDecimals);
   if (Number(size) <= 0) {
@@ -135,12 +184,11 @@ async function prepareOrder(): Promise<void> {
 // direction. Reads the live position from the tracked wallet, so there's
 // nothing to fat-finger on air beyond approving the signature.
 async function prepareClose(): Promise<void> {
-  const wallet = (arg("wallet") ?? process.env.UNDERPOD_WALLET ?? "").toLowerCase();
-  if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
-    throw new Error("need the position's address: --wallet 0x… or UNDERPOD_WALLET in .env");
-  }
-  const coinArg = arg("coin");
-  const slip = Number(arg("slippage") ?? 0.05);
+  const perp = episodePerp();
+  const wallet = tradingWallet();
+  const coinArg = perp?.coin ?? arg("coin");
+  const slip = Number(arg("slippage") ?? 0.005);
+  validateSlippage(slip);
   // HIP-3 coins are addressed "dex:COIN" — read that dex's clearinghouse.
   const dex = coinArg?.includes(":")
     ? coinArg.slice(0, coinArg.indexOf(":"))
@@ -171,7 +219,8 @@ async function prepareClose(): Promise<void> {
 async function send(): Promise<void> {
   const sig = arg("sig");
   if (!sig) throw new Error("need --sig 0x<65-byte signature from sigil>");
-  const { label, action, nonce, vaultAddress } = JSON.parse(readFileSync(STASH, "utf8"));
+  const { label, action, nonce, vaultAddress, network } = JSON.parse(readFileSync(STASH, "utf8"));
+  if (network !== NET) throw new Error(`prepared action network is ${network ?? "unknown"}; prepare again with HL_NET=${NET}`);
   console.log(`\n  [${NET}] sending: ${label}  (nonce ${nonce})`);
   const result = await postExchange(action, nonce, splitSig(sig), vaultAddress);
   console.log(`  response:\n${JSON.stringify(result, null, 2)}\n`);
@@ -193,7 +242,8 @@ const run =
 
 if (!run) {
   console.error(
-    `usage: npm run hl <roll|prepare-leverage|prepare-order|prepare-close|send> [...]\n` +
+    `usage: npm run hl -- <roll|prepare-leverage|prepare-order|prepare-close|send> [...]\n` +
+      `  prepare commands accept --episode [path] to use the saved thematic perp\n` +
       `  net: ${NET}${IS_MAINNET ? "  ⚠️  MAINNET — real money" : "  (testnet)"}`,
   );
   process.exit(1);

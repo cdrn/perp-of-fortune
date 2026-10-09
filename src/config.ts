@@ -6,7 +6,10 @@ import { readFileSync } from "node:fs";
 try {
   for (const line of readFileSync(".env", "utf8").split("\n")) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*("?)(.*?)\2\s*$/);
-    if (m && process.env[m[1]!] === undefined) process.env[m[1]!] = m[3]!;
+    // This process is public/read-only. Operator API credentials belong in the
+    // operator environment and must never be loaded from .env by the dashboard.
+    if (m && /^(UNDERPOD_(WALLET|DEX|DEXES|PORT|HOST|POLL_MS|DB|EPISODE)|HL_API)$/.test(m[1]!)
+      && process.env[m[1]!] === undefined) process.env[m[1]!] = m[3]!;
   }
 } catch {}
 
@@ -22,6 +25,7 @@ export const DEXES: string[] = (
     : ["", DEX]
 ).filter((d, i, a) => a.indexOf(d) === i);
 export const PORT = Number(process.env.UNDERPOD_PORT ?? 4749);
+export const HOST = process.env.UNDERPOD_HOST ?? "127.0.0.1";
 export const POLL_MS = Number(process.env.UNDERPOD_POLL_MS ?? 5000);
 export const DB_PATH = process.env.UNDERPOD_DB ?? "underpod.db";
 

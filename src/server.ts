@@ -2,7 +2,8 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { PORT } from "./config.js";
+import { HOST, PORT } from "./config.js";
+import type { EpisodeTracker } from "./episode-tracker.js";
 import type { Store } from "./store.js";
 import type { Tracker } from "./tracker.js";
 
@@ -15,6 +16,7 @@ export function startServer(
   tracker: Tracker | null,
   store: Store,
   port = PORT,
+  episodeTracker: EpisodeTracker | null = null,
 ) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -32,6 +34,9 @@ export function startServer(
     try {
       if (url.pathname === "/api/state") {
         return json(tracker ? tracker.current : { wallet: "" });
+      }
+      if (url.pathname === "/api/episode") {
+        return json(episodeTracker ? episodeTracker.current : { episode: null, binary: null });
       }
       if (url.pathname === "/api/history") {
         const coin = url.searchParams.get("coin");
@@ -70,10 +75,10 @@ export function startServer(
       return send(404, "text/plain", "not found");
     }
   });
-  server.listen(port, () => {
+  server.listen(port, HOST, () => {
     const addr = server.address();
     const p = typeof addr === "object" && addr ? addr.port : port;
-    console.log(`[underpod] dash on :${p}`);
+    console.log(`[underpod] dash on http://${HOST}:${p}`);
   });
   return server;
 }
