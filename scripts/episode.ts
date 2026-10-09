@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { assetInfo, NET, validateLeverage } from "./hllib.js";
 import { episodePath, positiveNumber, readEpisode, withEpisodeLock, writeEpisode, type Episode } from "../src/episode.js";
-import { PolymarketUSClient, buildBuyOrder, normalizeOrder, normalizePosition } from "../src/polymarket-us.js";
+import { PolymarketUSClient, PolymarketUSHttpError, buildBuyOrder, normalizeOrder, normalizePosition } from "../src/polymarket-us.js";
 import { maximumEntryCost, sizeBinaryOrder, verifyPreview } from "../src/binary-order.js";
 
 const { values: args, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -33,6 +33,8 @@ const current = (): Episode => {
   return e;
 };
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
+const UNFILLED_TERMINAL = /CANCEL|REJECT|EXPIRE/;
+const HOLDINGS_MISMATCH = "Account holdings differ from this episode's fill receipt. P&L is unavailable until reconciled.";
 
 async function plan() {
   const theme = required("theme"), coin = required("coin"), thesis = required("thesis"), side = required("side");
@@ -60,7 +62,10 @@ async function plan() {
       if (!args.replace) throw new Error("An episode already exists. Use --replace to archive it and select another pair.");
       if (["sending", "uncertain"].includes(existing.binary.prepared?.state ?? "")) throw new Error("Reconcile the uncertain binary submission before replacing the episode");
       if (existing.binary.prepared?.state === "submitted" && (!existing.binary.order || !/FILLED|CANCELED|CANCELLED|REJECTED|EXPIRED/.test(existing.binary.order.status))) throw new Error("Reconcile the submitted binary order to a terminal state before replacing the episode");
-      if ((existing.binary.order?.filledShares ?? 0) > 0 && !existing.binary.finalSettlement) throw new Error("Confirm the current episode's account settlement before replacing it");
+      // A reconciliation error already withholds P&L; after cutoff it must not
+      // also strand the operator, so the episode is archived as-is for review.
+      const withheld = !!existing.binary.reconciliationError && Date.now() >= existing.endsAt;
+      if ((existing.binary.order?.filledShares ?? 0) > 0 && !existing.binary.finalSettlement && !withheld) throw new Error("Confirm the current episode's account settlement before replacing it");
       if (Date.now() < existing.endsAt && (existing.binary.order?.filledShares ?? 0) > 0) throw new Error("The current binary has filled shares; finish this episode before replacing it");
       const archive = join(dirname(episodePath()), "underpod-episodes");
       mkdirSync(archive, { recursive: true, mode: 0o700 });
@@ -76,6 +81,11 @@ async function prepare() {
   const auth = privateClient();
   await withEpisodeLock(async () => {
     const e = current(), b = e.binary;
+    // An IOC that found no liquidity is over: record it and allow one fresh preparation.
+    if (b.order && b.order.filledShares === 0 && UNFILLED_TERMINAL.test(b.order.status) && b.prepared?.state === "submitted") {
+      b.attempts = [...b.attempts ?? [], { orderId: b.order.id, preparedAt: b.prepared.preparedAt, outcome: "unfilled" }];
+      delete b.order; delete b.prepared; delete b.reconciliationError; delete b.positionCheckedAt;
+    }
     if (b.order || b.prepared && b.prepared.state !== "prepared") throw new Error("This episode already has an order/submission; reconcile it instead of preparing a duplicate");
     const market = await client.discoverHourlyBitcoin({ episodeStart: e.startsAt, targetEnd: e.endsAt });
     if (market.slug !== b.market.slug) throw new Error("Binary listing changed; review a new episode plan");
@@ -111,8 +121,23 @@ async function send() {
     if (Date.now() - quote.updatedAt > 15_000) throw new Error("The binary quote expired during preview; prepare again");
     p.state = "sending";
     writeEpisode(e); // Durable before POST: never retry an ambiguous submission.
+    let response;
     try {
-      const response = await auth.createOrder(request);
+      response = await auth.createOrder(request);
+    } catch (error) {
+      // A 4xx (other than a request timeout) is the venue refusing the request,
+      // so no order exists. Anything else is ambiguous and must be reconciled.
+      if (error instanceof PolymarketUSHttpError && error.status >= 400 && error.status < 500 && error.status !== 408) {
+        b.attempts = [...b.attempts ?? [], { preparedAt: p.preparedAt, outcome: "rejected" }];
+        delete b.prepared;
+        writeEpisode(e);
+        throw new Error(`Polymarket US rejected the binary order (HTTP ${error.status}); nothing was submitted. Fix the cause, then run prepare-binary again.`);
+      }
+      p.state = "uncertain";
+      writeEpisode(e);
+      throw new Error(`Binary submission needs reconciliation; do not resend. Find the order in Polymarket US and run sync-binary --order-id ID, or abandon-binary once the account shows no trade. ${error instanceof Error ? error.message : "Unknown submission result"}`);
+    }
+    try {
       if (!response.id) throw new Error("Venue did not return an order ID");
       p.orderId = response.id; p.state = "submitted"; writeEpisode(e);
       const receipt = normalizeOrder(await auth.getOrder(response.id), b.side);
@@ -123,7 +148,7 @@ async function send() {
     } catch (error) {
       if (!p.orderId) p.state = "uncertain";
       writeEpisode(e);
-      throw new Error(`Binary submission needs reconciliation; do not resend. ${p.orderId ? `Order ID: ${p.orderId}. ` : "Find the order in Polymarket US and run sync-binary --order-id ID. "}${error instanceof Error ? error.message : "Unknown submission result"}`);
+      throw new Error(`Binary submission needs reconciliation; do not resend. ${p.orderId ? `Order ID: ${p.orderId}. ` : "Find the order in Polymarket US and run sync-binary --order-id ID, or abandon-binary once the account shows no trade. "}${error instanceof Error ? error.message : "Unknown submission result"}`);
     }
   });
 }
@@ -136,11 +161,14 @@ async function syncOnce() {
     if (!id) throw new Error("No binary order ID. Recover it from Polymarket US and pass --order-id; do not resubmit an uncertain order.");
     const knownId = b.order?.id ?? b.prepared?.orderId;
     if (knownId && knownId !== id) throw new Error("The provided order ID conflicts with the episode's known order");
+    if (b.attempts?.some((a) => a.orderId === id)) throw new Error("That order belongs to an earlier attempt for this episode, not the current submission");
     const orderResponse = await auth.getOrder(id);
     const receipt = normalizeOrder(orderResponse, b.side);
     if (receipt.id !== id || receipt.marketSlug !== b.market.slug) throw new Error("Order ID does not match the selected Bitcoin market");
     if (!b.prepared || receipt.filledShares > b.prepared.shares + 1e-8 || receipt.averagePrice !== null && receipt.averagePrice > b.prepared.limitPrice + 1e-8) throw new Error("Order does not match the prepared share/price limits");
     const expected = buildBuyOrder({ marketSlug: b.market.slug, side: b.side, shares: b.prepared.shares, maxPrice: b.prepared.limitPrice, priceTick: b.market.priceTick, minimumShares: b.market.minimumShares });
+    const createdAt = Date.parse(orderResponse.order.createTime ?? orderResponse.order.insertTime ?? "");
+    if (!knownId && Number.isFinite(createdAt) && createdAt < b.prepared.preparedAt - 5_000) throw new Error("Recovered order was created before this preparation; it is not the uncertain submission");
     if (orderResponse.order.quantity !== expected.quantity || orderResponse.order.price?.currency !== "USD" || Number(orderResponse.order.price.value) !== Number(expected.price.value)) throw new Error("Recovered order differs from the prepared request");
     const settlement = Date.now() >= e.endsAt ? await client.getSettlement(b.market.slug) : null;
     const holdings = normalizePosition(await auth.getPositions(b.market.slug), b.market.slug, b.side);
@@ -157,8 +185,11 @@ async function syncOnce() {
           b.finalSettlement = { shares: settledShares, yesValue: settlement, payoutUsd: settledShares * (b.side === "up" ? settlement : 1 - settlement), verifiedAt: Date.now() };
         }
       }
-    } else if (settlement === null && Date.now() < e.endsAt && Math.abs(holdings.shares - receipt.filledShares) > 1e-8) {
-      b.reconciliationError = "Account holdings differ from this episode's fill receipt. P&L is unavailable until reconciled.";
+    } else if (settlement === null && Date.now() < e.endsAt) {
+      // Reflect the latest read: a race between the order and positions reads
+      // heals on the next poll, while a real difference at cutoff still sticks.
+      if (Math.abs(holdings.shares - receipt.filledShares) > 1e-8) b.reconciliationError = HOLDINGS_MISMATCH;
+      else if (b.reconciliationError === HOLDINGS_MISMATCH) delete b.reconciliationError;
     }
     // After cutoff, account clearing can remove inventory before the public
     // gateway publishes the result. Await the position-resolution record above
@@ -172,7 +203,27 @@ async function syncOnce() {
   });
 }
 
-const usage = `Paired episode: one hourly BTC binary + one thematic perp.\n\n  npm run episode -- plan --theme "Episode theme" --coin SOL --side long --thesis "Why this perp fits" --binary-side up --start 2026-10-02T20:00:00-07:00\n  npm run episode -- show\n  npm run episode -- prepare-binary\n  npm run episode -- send-binary --confirm EPISODE_ID\n  npm run episode -- sync-binary --watch\n\nPlanning is public/read-only. Binary execution requires PM_US_API_KEY and PM_US_SECRET_KEY in the operator environment. Polymarket US is real money; Hyperliquid defaults to testnet. Budgets default to $50 per leg; --binary-budget includes entry fees. --lev defaults to the perp's venue maximum. Binary limit defaults to $0.60; entries below $0.40 are rejected. No trade is placed by plan or show.`;
+// Clears an uncertain or crashed submission only once the account proves no order
+// landed: past the IOC's lifetime, no holdings and no trade in this market.
+async function abandon() {
+  const auth = privateClient();
+  await withEpisodeLock(async () => {
+    const e = current(), b = e.binary, p = b.prepared;
+    if (args.confirm !== e.id) throw new Error("Pass --confirm with the exact episode ID to abandon the uncertain submission");
+    if (!p || !["uncertain", "sending"].includes(p.state) || p.orderId || b.order) throw new Error("Only an uncertain submission without an order ID can be abandoned; use sync-binary otherwise");
+    if (Date.now() < p.preparedAt + 120_000) throw new Error("Wait two minutes after the send before abandoning, so an in-flight order can land first");
+    const holdings = normalizePosition(await auth.getPositions(b.market.slug), b.market.slug, b.side);
+    if (holdings.shares !== 0) throw new Error("The account holds this market; recover the order with sync-binary --order-id instead");
+    const activities = await auth.getActivities(b.market.slug);
+    if (activities.activities.some((a) => a.trade)) throw new Error("The account has a trade in this market; recover the order with sync-binary --order-id instead");
+    b.attempts = [...b.attempts ?? [], { preparedAt: p.preparedAt, outcome: "abandoned" }];
+    delete b.prepared;
+    writeEpisode(e);
+    print({ episodeId: e.id, abandoned: true, next: "npm run episode -- prepare-binary" });
+  });
+}
+
+const usage = `Paired episode: one hourly BTC binary + one thematic perp.\n\n  npm run episode -- plan --theme "Episode theme" --coin SOL --side long --thesis "Why this perp fits" --binary-side up --start 2026-10-02T20:00:00-07:00\n  npm run episode -- show\n  npm run episode -- prepare-binary\n  npm run episode -- send-binary --confirm EPISODE_ID\n  npm run episode -- sync-binary --watch\n  npm run episode -- abandon-binary --confirm EPISODE_ID   (uncertain send with no order on the account)\n\nPlanning is public/read-only. Binary execution requires PM_US_API_KEY and PM_US_SECRET_KEY in the operator environment. Polymarket US is real money; Hyperliquid defaults to testnet. Budgets default to $50 per leg; --binary-budget includes entry fees. --lev defaults to the perp's venue maximum. Binary limit defaults to $0.60; entries below $0.40 are rejected. No trade is placed by plan or show.`;
 
 async function main() {
   if (args.help) return console.log(usage);
@@ -181,12 +232,14 @@ async function main() {
   if (command === "show") return print(current());
   if (command === "prepare-binary") return prepare();
   if (command === "send-binary") return send();
+  if (command === "abandon-binary") return abandon();
   if (command === "sync-binary") {
-    do {
-      await syncOnce();
-      if (args.watch) await new Promise((r) => setTimeout(r, 5000));
-    } while (args.watch);
-    return;
+    if (!args.watch) return syncOnce();
+    // Watching runs through the show: one failed poll must not end it.
+    for (;;) {
+      try { await syncOnce(); } catch (e) { console.error(`sync failed, retrying: ${e instanceof Error ? e.message : e}`); }
+      await new Promise((r) => setTimeout(r, 5000));
+    }
   }
   throw new Error(usage);
 }

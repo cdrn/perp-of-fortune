@@ -47,6 +47,9 @@ interface ExchangeState {
   loseResponse: boolean;
   publicSettlement: number | null;
   resolutionPosition: number | null;
+  rejectStatus?: number;
+  fillNothing?: boolean;
+  trades?: number;
   order?: PMOrder;
 }
 
@@ -93,6 +96,8 @@ globalThis.fetch = async (input, init = {}) => {
       return response({positions:state.holdings === 0 ? {} : {[slug]:{netPositionDecimal:String(state.holdings)}},eof:true});
     }
     if (url.pathname === '/v1/portfolio/activities' && method === 'GET') {
+      if (state.trades) return response({activities:Array.from({length:state.trades},(_, i)=>({
+        type:'ACTIVITY_TYPE_TRADE',trade:{id:'t'+i,marketSlug:slug,qty:'1'}})),eof:true});
       return response({activities:state.resolutionPosition === null ? [] : [{
         type:'ACTIVITY_TYPE_POSITION_RESOLUTION',positionResolution:{marketSlug:slug,
           beforePosition:{netPositionDecimal:String(state.resolutionPosition)},
@@ -108,7 +113,14 @@ globalThis.fetch = async (input, init = {}) => {
       }});
     }
     if (url.pathname === '/v1/orders' && method === 'POST') {
+      if (state.rejectStatus) return new Response('{}',{status:state.rejectStatus});
       state.mutationCount++;
+      if (state.fillNothing) {
+        state.order = {...body,id:'test-order-'+state.mutationCount,state:'ORDER_STATE_CANCELED',cumQuantity:0,leavesQuantity:0,
+          insertTime:new Date(Date.now()).toISOString()};
+        write(state);
+        return response({id:state.order.id});
+      }
       state.order = {...body,id:'test-order-1',state:'ORDER_STATE_FILLED',cumQuantity:body.quantity,leavesQuantity:0,
         avgPx:{value:'0.50',currency:'USD'},insertTime:new Date(Date.now()).toISOString(),
         commissionNotionalTotalCollected:{value:String(Math.ceil(body.quantity*0.0695*0.25*100)/100),currency:'USD'},
@@ -296,4 +308,109 @@ test('CLI settlement preserves a holdings mismatch observed before cutoff', (t) 
   success(f.run('sync-binary'));
   assert.equal(f.readEpisode().binary.finalSettlement, undefined);
   assert.match(f.readEpisode().binary.reconciliationError!, /review the account activity/);
+});
+
+test('CLI definite 4xx rejection clears the preparation so the operator can prepare again', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  f.setExchange(state => { state.rejectStatus = 400; });
+  failure(f.run('send-binary', '--confirm', planned.id), /rejected the binary order \(HTTP 400\); nothing was submitted/);
+  const rejected = f.readEpisode();
+  assert.equal(rejected.binary.prepared, undefined);
+  assert.equal(rejected.binary.attempts?.[0]?.outcome, 'rejected');
+  f.setExchange(state => { state.rejectStatus = undefined; });
+  success(f.run('prepare-binary'));
+  success(f.run('send-binary', '--confirm', planned.id));
+  assert.equal(f.readEpisode().binary.order?.id, ORDER_ID);
+  assert.equal(f.readExchange().mutationCount, 1);
+});
+
+test('CLI ambiguous 5xx still requires reconciliation', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  f.setExchange(state => { state.rejectStatus = 502; });
+  failure(f.run('send-binary', '--confirm', planned.id), /needs reconciliation; do not resend/);
+  assert.equal(f.readEpisode().binary.prepared?.state, 'uncertain');
+});
+
+test('CLI abandon clears an uncertain send only when the account shows no order landed', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  f.setExchange(state => { state.rejectStatus = 504; });
+  failure(f.run('send-binary', '--confirm', planned.id), /needs reconciliation/);
+  failure(f.run('abandon-binary', '--confirm', planned.id), /Wait two minutes/);
+  f.setClock(NOW + 130_000);
+  f.setExchange(state => { state.trades = 1; });
+  failure(f.run('abandon-binary', '--confirm', planned.id), /has a trade in this market/);
+  f.setExchange(state => { state.trades = 0; state.holdings = -3; });
+  failure(f.run('abandon-binary', '--confirm', planned.id), /holds this market/);
+  assert.equal(f.readEpisode().binary.prepared?.state, 'uncertain');
+  f.setExchange(state => { state.holdings = 0; state.rejectStatus = undefined; });
+  failure(f.run('abandon-binary', '--confirm', 'wrong-id'), /--confirm/);
+  success(f.run('abandon-binary', '--confirm', planned.id));
+  const abandoned = f.readEpisode();
+  assert.equal(abandoned.binary.prepared, undefined);
+  assert.equal(abandoned.binary.attempts?.[0]?.outcome, 'abandoned');
+  success(f.run('prepare-binary'));
+});
+
+test('CLI zero-fill IOC can be prepared again, and the dead order cannot be recovered as the new one', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  f.setExchange(state => { state.fillNothing = true; });
+  success(f.run('send-binary', '--confirm', planned.id));
+  const missed = f.readEpisode();
+  assert.equal(missed.binary.order?.filledShares, 0);
+  const deadId = missed.binary.order!.id;
+  success(f.run('prepare-binary'));
+  const retry = f.readEpisode();
+  assert.equal(retry.binary.order, undefined);
+  assert.deepEqual(retry.binary.attempts?.map(a => [a.orderId, a.outcome]), [[deadId, 'unfilled']]);
+  f.setExchange(state => { state.rejectStatus = 503; });
+  failure(f.run('send-binary', '--confirm', planned.id), /needs reconciliation/);
+  failure(f.run('sync-binary', '--order-id', deadId), /earlier attempt/);
+  assert.equal(f.readEpisode().binary.prepared?.state, 'uncertain');
+});
+
+test('CLI recovery refuses an order created before the uncertain preparation', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  f.setExchange(state => { state.loseResponse = true; });
+  failure(f.run('send-binary', '--confirm', planned.id), /needs reconciliation/);
+  f.setExchange(state => { state.order!.insertTime = new Date(NOW - 300_000).toISOString(); });
+  failure(f.run('sync-binary', '--order-id', ORDER_ID), /created before this preparation/);
+  assert.equal(f.readEpisode().binary.prepared?.state, 'uncertain');
+});
+
+test('CLI transient pre-cutoff mismatch heals, and a withheld result does not block the next episode', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  success(f.run('send-binary', '--confirm', planned.id));
+  const shares = f.readEpisode().binary.order!.filledShares;
+  f.setExchange(state => { state.holdings = -shares / 2; });
+  success(f.run('sync-binary'));
+  assert.match(f.readEpisode().binary.reconciliationError!, /holdings differ/);
+  f.setExchange(state => { state.holdings = -shares; });
+  success(f.run('sync-binary'));
+  assert.equal(f.readEpisode().binary.reconciliationError, undefined);
+  // A real mismatch at cutoff still withholds P&L, but no longer strands the operator.
+  f.setExchange(state => { state.holdings = -shares / 2; });
+  success(f.run('sync-binary'));
+  f.setClock(END + 1_000);
+  f.setExchange(state => { state.holdings = 0; state.publicSettlement = 0; state.resolutionPosition = -shares / 2; });
+  success(f.run('sync-binary'));
+  assert.equal(f.readEpisode().binary.finalSettlement, undefined);
+  // List the next hour so planning the replacement can discover a market.
+  f.setExchange(state => {
+    const shift = (iso: string) => new Date(Date.parse(iso) + 3_600_000).toISOString();
+    const m = state.event.markets[0]!;
+    state.event.slug += '-next'; m.slug += '-next';
+    state.event.startDate = shift(state.event.startDate); state.event.endDate = shift(state.event.endDate);
+    m.assetPriceTerms.windowStart = shift(m.assetPriceTerms.windowStart); m.assetPriceTerms.windowEnd = shift(m.assetPriceTerms.windowEnd);
+  });
+  const next = ['--theme', 'Next', '--coin', 'SOL', '--side', 'long', '--thesis', 'x', '--binary-side', 'up', '--start', new Date(END).toISOString(), '--json'];
+  failure(f.run('plan', ...next), /already exists/);
+  const replaced = f.run('plan', '--replace', ...next);
+  success(replaced);
+  assert.equal(f.readEpisode().startsAt, END);
 });

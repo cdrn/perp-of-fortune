@@ -48,6 +48,9 @@ export interface Episode {
     positionCheckedAt?: number;
     reconciliationError?: string;
     finalSettlement?: { shares: number; yesValue: number; payoutUsd: number; verifiedAt: number };
+    /** Earlier orders for this episode that ended with no fills or never reached the venue.
+     * Recovery must never adopt one of these as the current order. */
+    attempts?: { orderId?: string; preparedAt: number; outcome: "unfilled" | "rejected" | "abandoned" }[];
     prepared?: {
       shares: number;
       limitPrice: number;

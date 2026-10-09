@@ -236,8 +236,10 @@ export class Tracker {
       }
     }
 
+    // Pin the episode's coin but not its side: a flipped position is still the
+    // live exposure, and the flip handling below has to see it to close the old row.
     const winner = episode
-      ? candidates.find((c) => c.position.coin === episode.perp.coin && (Number(c.position.szi) < 0 ? "short" : "long") === episode.perp.side)
+      ? candidates.find((c) => c.position.coin === episode.perp.coin)
       : candidates[0];
     if (!winner) {
       // Idle: show the best-funded dex's purse so the header isn't empty.

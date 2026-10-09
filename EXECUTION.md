@@ -52,18 +52,29 @@ venue's preview; it places no order. Preparations expire after 60 seconds. Send
 rechecks listing/book/holdings/preview, then submits one IOC limit order. DOWN
 orders use the venue's YES-price convention internally. Only confirmed fills
 produce a position; partial or zero fills never become a full-budget position.
+If the IOC finds no liquidity (zero fill), run `prepare-binary` again: the dead
+order is recorded as an earlier attempt and a fresh preparation is allowed.
 
 Keep `sync-binary --watch` running through account settlement. It authenticates
 only in the operator and writes receipts for the read-only dashboard. If holdings
-differ from this episode's receipt, P&L is withheld. Use a dedicated episode
+differ from this episode's receipt, P&L is withheld; a difference that clears on
+the next poll heals, but one still present at the cutoff stays. A withheld result
+does not block `plan --replace` once the hour is over. Use a dedicated episode
 position; other trades in the same market break attribution. The intended binary
 strategy holds through resolution; manual early exits are not automatically
 attributed to the episode.
 
+If the venue refuses the order outright (a 4xx such as insufficient balance or an
+ineligible account), nothing was submitted: the preparation is cleared, so fix the
+cause and run `prepare-binary` again.
+
 If submission times out or crashes, **do not submit again**. Durable state blocks
 a retry. If an ID was recorded, run `sync-binary`; otherwise find the original
-order in Polymarket US and use `sync-binary --order-id ID`. A missing receipt does
-not prove failure. A leftover `.lock` after a crash requires checking that no
+order in Polymarket US and use `sync-binary --order-id ID` (it refuses orders
+created before the preparation or already recorded as earlier attempts). A missing
+receipt does not prove failure. If the account shows no order at all, wait two
+minutes and run `abandon-binary --confirm EPISODE_ID`; it refuses while the
+market has any holdings or trades, then allows a fresh `prepare-binary`. A leftover `.lock` after a crash requires checking that no
 operator is running before removing it; this does not clear an uncertain send.
 
 ### Thematic perp
@@ -154,7 +165,8 @@ npm run hl -- prepare-order --coin SOL --side short --usd 50 --lev 10
 ```
 
 `--usd` is the **margin** committed; notional = usd × lev. The order is a
-marketable IOC (`--slippage` defaults to 0.5%, with a 5% ceiling); it can fill
+marketable IOC (`--slippage` defaults to 0.5% for opens and 5% for closes, with a
+5% ceiling); it can fill
 partially and cancels the unfilled remainder. After `send`, check actual fills and the dash — the position should
 appear within one poll (~5s).
 
@@ -176,7 +188,9 @@ npm run close -- --coin SOL                # or name it (npm run hl prepare-clos
 ```
 
 HIP-3 builder perps are addressed as `dex:COIN` (e.g. `--coin xyz:DRAM`);
-set `UNDERPOD_DEX` to make the tracker watch a builder dex.
+set `UNDERPOD_DEX` to make the tracker watch a builder dex. Without a prefix
+(or `--dex`), close searches the main dex and every dex in `UNDERPOD_DEXES` /
+`UNDERPOD_DEX`; an episode coin without a prefix always closes on the main dex.
 
 Reduce-only IOC for the full size in the opposite direction — it can only
 close, never flip. Reads the position from `UNDERPOD_WALLET` (or `--wallet`),

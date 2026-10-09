@@ -51,7 +51,10 @@ The operator needs Polymarket US API credentials in its private environment;
 the dashboard loads public settings only. Do not reuse an international CLOB
 wallet or claim that Hyperliquid's trade-only credential scope applies here.
 There is no binary testnet. Never replay an uncertain send; reconcile the
-recorded order ID (or recover it from the venue) before proceeding.
+recorded order ID (or recover it from the venue) before proceeding. A 4xx refusal
+clears the preparation (nothing was sent); a zero-fill IOC allows a fresh
+`prepare-binary`; an uncertain send with no order on the account is cleared by
+`episode abandon-binary --confirm EPISODE_ID` after two minutes.
 
 Perp execution: use `hl prepare-leverage --episode`, sign/send, then
 `hl prepare-order --episode`, sign/send, on the saved network. The CLI verifies
