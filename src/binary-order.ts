@@ -20,4 +20,13 @@ export function sizeBinaryOrder(window: { startsAt: number; endsAt: number }, qu
   return shares;
 }
 
+/** Whole shares for a resting bid at `price`: same band, window and minimum, no book needed. */
+export function sizeRestingOrder(window: { startsAt: number; endsAt: number }, budget: number, price: number, limit: number, now = Date.now()): number {
+  if (!Number.isFinite(budget) || budget <= 0 || !(price >= ENTRY_FLOOR && price <= limit && limit <= ENTRY_CEILING)) throw new Error(`Resting bid must be between $${ENTRY_FLOOR.toFixed(2)} and the limit ($${limit.toFixed(2)})`);
+  if (now < window.startsAt - EARLY_ENTRY_MS || now > window.endsAt - MIN_REMAINING_MS) throw new Error("Binary is outside its entry window (5 minutes before the hour to 15 minutes after)");
+  const shares = Math.floor(budget / price);
+  if (shares * price < MIN_NOTIONAL_USD) throw new Error(`Budget is too small for Hyperliquid's $${MIN_NOTIONAL_USD} minimum order`);
+  return shares;
+}
+
 export const maximumEntryCost = (shares: number, limit: number) => Math.round(shares * limit * 1e8) / 1e8;

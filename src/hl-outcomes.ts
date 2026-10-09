@@ -45,7 +45,7 @@ export interface BinaryQuote {
 }
 export interface OutcomeOrderAction {
   type: "order";
-  orders: [{ a: number; b: true; p: string; s: string; r: false; t: { limit: { tif: "Ioc" } }; c: string }];
+  orders: [{ a: number; b: true; p: string; s: string; r: false; t: { limit: { tif: "Ioc" | "Gtc" } }; c: string }];
   grouping: "na";
 }
 export type ExchangeResult =
@@ -164,7 +164,8 @@ export function formatOutcomePrice(price: number): string {
 }
 export function newCloid(): string { return `0x${randomBytes(16).toString("hex")}`; }
 
-export function buildBuyAction(input: { outcome: number; side: BinarySide; shares: number; limitPrice: number; cloid: string }): OutcomeOrderAction {
+/** IOC takes what's on the book; GTC rests a bid when nobody is offering. */
+export function buildBuyAction(input: { outcome: number; side: BinarySide; shares: number; limitPrice: number; cloid: string; tif?: "Ioc" | "Gtc" }): OutcomeOrderAction {
   if (!Number.isInteger(input.outcome) || input.outcome < 0) throw new Error("Invalid outcome id");
   if (input.side !== "up" && input.side !== "down") throw new Error("Binary side must be up or down");
   if (!Number.isInteger(input.shares) || input.shares < 1) throw new Error("Outcome size must be a whole number of shares");
@@ -172,7 +173,7 @@ export function buildBuyAction(input: { outcome: number; side: BinarySide; share
   // Key order matters: the action is msgpack-hashed for the signature.
   return {
     type: "order",
-    orders: [{ a: assetId(input.outcome, input.side), b: true, p: formatOutcomePrice(input.limitPrice), s: String(input.shares), r: false, t: { limit: { tif: "Ioc" } }, c: input.cloid }],
+    orders: [{ a: assetId(input.outcome, input.side), b: true, p: formatOutcomePrice(input.limitPrice), s: String(input.shares), r: false, t: { limit: { tif: input.tif ?? "Ioc" } }, c: input.cloid }],
     grouping: "na",
   };
 }

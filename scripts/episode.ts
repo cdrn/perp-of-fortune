@@ -12,13 +12,13 @@ import {
   apiFor, balanceCoin, bookCoin, buildBuyAction, HLOutcomeClient, newCloid, parseExchangeResult,
   settlementFromFills, summariseFills, type BinaryMarket, type BinarySide,
 } from "../src/hl-outcomes.js";
-import { ENTRY_CEILING, ENTRY_FLOOR, maximumEntryCost, sizeBinaryOrder } from "../src/binary-order.js";
+import { ENTRY_CEILING, ENTRY_FLOOR, maximumEntryCost, sizeBinaryOrder, sizeRestingOrder } from "../src/binary-order.js";
 
 const { values: args, positionals } = parseArgs({ allowPositionals: true, options: {
   theme: { type: "string" }, coin: { type: "string" }, side: { type: "string" }, thesis: { type: "string" },
   start: { type: "string" }, "binary-side": { type: "string" }, "binary-budget": { type: "string" },
   "perp-margin": { type: "string" }, lev: { type: "string" }, limit: { type: "string" }, outcome: { type: "string" },
-  confirm: { type: "string" }, sig: { type: "string" }, replace: { type: "boolean" },
+  confirm: { type: "string" }, sig: { type: "string" }, replace: { type: "boolean" }, rest: { type: "boolean" }, price: { type: "string" },
   watch: { type: "boolean" }, json: { type: "boolean" }, help: { type: "boolean" },
 } });
 const PREPARATION_MS = 120_000;
@@ -105,7 +105,12 @@ async function prepare() {
     if (args.outcome) markets = markets.filter((m) => m.outcome === Number(args.outcome));
     if (!markets.length) throw new Error(args.outcome ? `Outcome ${args.outcome} is not a BTC binary expiring at this episode's cutoff` : "No BTC binary is listed for this episode's cutoff yet");
     const candidates: Candidate[] = [], skipped: string[] = [];
-    for (const market of markets) {
+    // --rest: nobody is offering, so post a bid at --price on one named market and wait for a seller.
+    const resting = args.rest === true;
+    if (resting && (!args.outcome || !args.price)) throw new Error("--rest needs --outcome N and --price P");
+    const restPrice = Number(args.price);
+    if (resting) candidates.push({ market: markets[0]!, shares: sizeRestingOrder(e, b.budgetUsd, restPrice, b.limitPrice), buyPrice: restPrice, depth: 0 });
+    for (const market of resting ? [] : markets) {
       try {
         const quote = await hl.getQuote(market.outcome, b.side);
         const shares = sizeBinaryOrder(e, quote, b.budgetUsd, b.limitPrice);
@@ -123,19 +128,20 @@ async function prepare() {
       if ((balances.get(balanceCoin(pick.market.outcome, side))?.total ?? 0) !== 0) throw new Error("The account already holds this outcome; use a separate market or account");
     }
     const usdc = balances.get("USDC");
-    const maxCost = maximumEntryCost(pick.shares, b.limitPrice);
+    const orderPrice = resting ? restPrice : b.limitPrice;
+    const maxCost = maximumEntryCost(pick.shares, orderPrice);
     if (!usdc || usdc.total - usdc.hold < maxCost) {
       throw new Error(`Spot USDC ${usdc ? (usdc.total - usdc.hold).toFixed(2) : "0.00"} is below the $${maxCost.toFixed(2)} maximum cost. Move it from perp margin first:\n  HL_NET=${NET} npx tsx scripts/xfer.ts prepare --dex spot --amount ${Math.ceil(maxCost)}`);
     }
     const cloid = newCloid(), nonce = Date.now();
-    const action = buildBuyAction({ outcome: pick.market.outcome, side: b.side, shares: pick.shares, limitPrice: b.limitPrice, cloid });
+    const action = buildBuyAction({ outcome: pick.market.outcome, side: b.side, shares: pick.shares, limitPrice: orderPrice, cloid, tif: resting ? "Gtc" : "Ioc" });
     b.market = pick.market;
-    b.prepared = { outcome: pick.market.outcome, shares: pick.shares, limitPrice: b.limitPrice, preparedAt: nonce, expiresAt: Math.min(nonce + PREPARATION_MS, e.endsAt), state: "prepared", cloid, action, nonce };
+    b.prepared = { outcome: pick.market.outcome, shares: pick.shares, limitPrice: orderPrice, preparedAt: nonce, expiresAt: Math.min(nonce + PREPARATION_MS, e.endsAt), state: "prepared", cloid, action, nonce };
     writeEpisode(e);
     print({
       episodeId: e.id, market: pick.market.title, outcome: pick.market.outcome, deployer: pick.market.official ? "Hyperliquid" : pick.market.deployer,
       resolves: pick.market.priceSource, side: b.side === "up" ? "YES (up)" : "NO (down)", bestAsk: pick.buyPrice, shares: pick.shares,
-      limit: b.limitPrice, maximumCost: maxCost, budgetUsd: b.budgetUsd, expiresAt: new Date(b.prepared.expiresAt).toISOString(),
+      order: resting ? `resting bid at ${restPrice}` : `IOC up to ${b.limitPrice}`, maximumCost: maxCost, budgetUsd: b.budgetUsd, expiresAt: new Date(b.prepared.expiresAt).toISOString(),
       ...(skipped.length ? { skipped } : {}),
     });
     console.log(`\n  ── sign with sigil_eth_sign_typed_data (portal = the trading key) ──\n`);
@@ -150,8 +156,11 @@ async function send() {
     const e = current(), b = e.binary, p = b.prepared, hl = venue(e);
     if (!p || p.state !== "prepared" || b.order || !b.market) throw new Error("No fresh, unsubmitted binary preparation; reconcile an existing send or prepare again");
     if (Date.now() >= p.expiresAt) throw new Error("Binary preparation expired; prepare again");
-    const quote = await hl.getQuote(p.outcome, b.side);
-    if (sizeBinaryOrder(e, quote, b.budgetUsd, p.limitPrice) < p.shares) throw new Error("Binary depth or price changed; prepare again");
+    if (p.action.orders[0].t.limit.tif === "Gtc") sizeRestingOrder(e, b.budgetUsd, p.limitPrice, b.limitPrice);
+    else {
+      const quote = await hl.getQuote(p.outcome, b.side);
+      if (sizeBinaryOrder(e, quote, b.budgetUsd, p.limitPrice) < p.shares) throw new Error("Binary depth or price changed; prepare again");
+    }
     p.state = "sending";
     writeEpisode(e); // Durable before POST: an ambiguous send is reconciled by client order id.
     let body: unknown;
