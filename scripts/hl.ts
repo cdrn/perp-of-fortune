@@ -13,7 +13,7 @@
 // {action, nonce} so `send` signs/posts the identical bytes sigil signed.
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import jsSha3 from "js-sha3";
 import { readEpisode, type Episode } from "../src/episode.js";
 import {
@@ -22,6 +22,7 @@ import {
   formatPrice,
   formatSize,
   IS_MAINNET,
+  type LivePosition,
   NET,
   openPositions,
   postExchange,
@@ -117,6 +118,26 @@ async function roll(): Promise<void> {
   console.log(`    HL_NET=${NET} npm run hl -- prepare-order --coin ${coin} --side ${side} --usd 50 --lev ${lev}\n`);
 }
 
+// Pools to search when nothing names one: main dex first, then whatever .env
+// says we trade. UNDERPOD_DEXES (comma list) wins over the single UNDERPOD_DEX.
+function dexCandidates(): string[] {
+  const env = process.env.UNDERPOD_DEXES ?? process.env.UNDERPOD_DEX ?? "";
+  return [...new Set(["", ...env.split(",").map((d) => d.trim())])];
+}
+
+// A failed prepare must not leave the previous action in the stash: `send`
+// reads it blind, so a stale entry signs the wrong trade — e.g. re-opening at
+// the moment you meant to close. Clear first; only a successful prepare writes.
+function clearStash(): void {
+  for (const f of [STASH, TD_FILE]) {
+    try {
+      rmSync(f);
+    } catch {
+      /* nothing stashed — fine */
+    }
+  }
+}
+
 function emitTypedData(label: string, action: unknown, nonce: number): void {
   const td = agentTypedData(action, nonce, null);
   writeFileSync(STASH, JSON.stringify({ label, action, nonce, vaultAddress: null, network: NET }, null, 2));
@@ -187,14 +208,33 @@ async function prepareClose(): Promise<void> {
   const perp = episodePerp();
   const wallet = tradingWallet();
   const coinArg = perp?.coin ?? arg("coin");
-  const slip = Number(arg("slippage") ?? 0.005);
+  // Closes keep the wide band: an unfilled close at max leverage mid-show is the
+  // expensive failure, and the IOC still only fills at the best available price.
+  const slip = Number(arg("slippage") ?? 0.05);
   validateSlippage(slip);
-  // HIP-3 coins are addressed "dex:COIN" — read that dex's clearinghouse.
-  const dex = coinArg?.includes(":")
+  // HIP-3 coins are addressed "dex:COIN" — that prefix pins the dex, and --dex
+  // overrides. An episode coin without a prefix lives on the main dex. Otherwise
+  // search every pool we might be in rather than trusting UNDERPOD_DEX: the
+  // position is wherever it actually is, and a close that can't find it is the
+  // one failure you cannot afford mid-show.
+  const pinned = coinArg?.includes(":")
     ? coinArg.slice(0, coinArg.indexOf(":"))
-    : (process.env.UNDERPOD_DEX ?? "").trim();
-  const positions = await openPositions(wallet, dex);
-  if (!positions.length) throw new Error(`no open position on ${wallet} (net=${NET})`);
+    : perp ? "" : arg("dex");
+  const candidates = pinned !== undefined ? [pinned] : dexCandidates();
+  let positions: LivePosition[] = [];
+  for (const d of candidates) {
+    const found = await openPositions(wallet, d);
+    if (found.some((p) => !coinArg || p.coin === coinArg)) {
+      positions = found;
+      break;
+    }
+  }
+  if (!positions.length) {
+    const where = candidates.map((d) => (d === "" ? "main" : d)).join(", ");
+    throw new Error(
+      `no open ${coinArg ?? "position"} on ${wallet} in [${where}] (net=${NET})`,
+    );
+  }
   const pos = coinArg ? positions.find((p) => p.coin === coinArg) : positions[0];
   if (!pos) {
     throw new Error(`no open ${coinArg} position (open: ${positions.map((p) => p.coin).join(", ")})`);
@@ -227,6 +267,9 @@ async function send(): Promise<void> {
 }
 
 const cmd = process.argv[2];
+// Clear before dispatch so a prepare that throws can never leave a signable
+// stale action behind for `send` to pick up.
+if (cmd?.startsWith("prepare-")) clearStash();
 const run =
   cmd === "roll"
     ? roll

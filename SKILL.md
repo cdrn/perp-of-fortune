@@ -10,6 +10,8 @@ description: >
 
 # Perp of Fortune — agent runbook
 
+**Repo: `~/Development/perp-of-fortune`.** Every command below runs from there.
+
 ## Default episode format: always two picks
 
 For a new Perp of Fortune episode, prepare **both** of these:
