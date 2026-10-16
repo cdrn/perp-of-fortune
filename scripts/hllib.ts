@@ -107,6 +107,16 @@ export interface HotMarket { coin: string; dex: string; maxLeverage: number; sig
 /** Never on the wheel: private-company pre-IPO perps the show won't trade. */
 export const HOT_EXCLUDE = new Set(["io:ANTH", "io:OAI"]);
 
+/** Every perp the wallet has a fill in: --fresh keeps repeats off the wheel. */
+export async function tradedCoins(user: string): Promise<Set<string>> {
+  const fills = await info<{ coin: string }[]>({ type: "userFills", user });
+  return new Set(fills.map((f) => f.coin).filter((c) => !c.startsWith("#")));
+}
+
+/** Price move that liquidates an isolated position at max leverage: Hyperliquid
+ * liquidates at maintenance margin, which is half the initial margin. */
+export const liquidationMove = (maxLeverage: number) => 1 / (2 * maxLeverage);
+
 /** Hourly σ from consecutive closes sampled every `minutes`. */
 export function hourlySigma(closes: number[], minutes: number): number {
   const r: number[] = [];
@@ -123,7 +133,7 @@ export function rankHot(markets: HotMarket[], opts: { top: number; minVolumeUsd:
     .sort((a, b) => b.swing - a.swing || a.coin.localeCompare(b.coin)).slice(0, opts.top);
 }
 
-export async function scanHot(dexes: string[], opts: { top: number; minVolumeUsd: number; hours?: number }): Promise<HotMarket[]> {
+export async function scanHot(dexes: string[], opts: { top: number; minVolumeUsd: number; hours?: number; exclude?: Set<string> }): Promise<HotMarket[]> {
   const hours = opts.hours ?? 8, now = Date.now(), out: HotMarket[] = [];
   for (const dex of dexes) {
     const [meta, ctxs] = await info<[{ universe: PerpMeta[] }, { markPx: string; dayNtlVlm?: string }[]]>(
@@ -131,7 +141,7 @@ export async function scanHot(dexes: string[], opts: { top: number; minVolumeUsd
     const liquid = meta.universe.map((u, i) => ({ u, vol: Number(ctxs[i]?.dayNtlVlm ?? 0), px: Number(ctxs[i]?.markPx) }))
       .filter(({ u, vol, px }) => !u.isDelisted && vol >= opts.minVolumeUsd && px > 0 && Number.isInteger(u.maxLeverage) && u.maxLeverage >= 1);
     for (const { u, vol } of liquid) {
-      if (HOT_EXCLUDE.has(u.name)) continue;
+      if (HOT_EXCLUDE.has(u.name) || opts.exclude?.has(u.name)) continue;
       await new Promise((r) => setTimeout(r, 60)); // stay under the /info rate limit
       const candles = await info<{ c: string }[]>({ type: "candleSnapshot", req: { coin: u.name, interval: "15m", startTime: now - hours * 3_600_000, endTime: now } });
       const sigma1h = hourlySigma(candles.map((c) => Number(c.c)), 15);

@@ -26,8 +26,10 @@ import {
   type LivePosition,
   NET,
   openPositions,
+  liquidationMove,
   postExchange,
   scanHot,
+  tradedCoins,
   splitSig,
   universe,
   validateLeverage,
@@ -90,11 +92,14 @@ async function rollHot(): Promise<void> {
   const dexes = process.argv.includes("--all-dexes")
     ? ["", ...(await allDexes())]
     : dexCandidates();
+  // --fresh: nothing this wallet has ever traded.
+  const exclude = process.argv.includes("--fresh") ? await tradedCoins(tradingWallet()) : undefined;
   console.log(`\n  scanning ${dexes.map((d) => d || "main").join(", ")} for the hottest markets (≥ $${(minVolumeUsd / 1e6).toFixed(0)}M/day)…`);
-  const wheel = await scanHot(dexes, { top, minVolumeUsd });
+  if (exclude) console.log(`  skipping ${exclude.size} markets already traded: ${[...exclude].sort().join(", ")}`);
+  const wheel = await scanHot(dexes, { top, minVolumeUsd, exclude });
   if (wheel.length < 2) throw new Error("not enough liquid markets to spin");
   console.log(`\n  🔥  THE HOT WHEEL (typical hour at max leverage, last 8h)\n`);
-  wheel.forEach((m, i) => console.log(`   ${String(i + 1).padStart(2)}. ${m.coin.padEnd(14)} ${String(m.maxLeverage).padStart(2)}×   ±${(m.swing * 100).toFixed(0)}% / hour   liq ~${(100 / m.maxLeverage).toFixed(1)}% away   $${(m.dayVolumeUsd / 1e6).toFixed(0)}M/day`));
+  wheel.forEach((m, i) => console.log(`   ${String(i + 1).padStart(2)}. ${m.coin.padEnd(14)} ${String(m.maxLeverage).padStart(2)}×   ±${(m.swing * 100).toFixed(0)}% / hour   liq ~${(liquidationMove(m.maxLeverage) * 100).toFixed(1)}% away   $${(m.dayVolumeUsd / 1e6).toFixed(0)}M/day`));
   const { picks, provenance } = spin();
   const pick = wheel[picks[0]! % wheel.length]!;
   const side = picks[1]! % 2 === 0 ? "long" : "short";

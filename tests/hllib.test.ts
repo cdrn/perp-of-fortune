@@ -159,4 +159,6 @@ test("the hot wheel ranks liquid markets by hourly swing at max leverage", async
   const m = (coin: string, maxLeverage: number, sigma1h: number, dayVolumeUsd = 10e6) => ({ coin, dex: "", maxLeverage, sigma1h, swing: sigma1h * maxLeverage, dayVolumeUsd });
   const ranked = rankHot([m("BTC", 40, 0.004), m("KR200", 20, 0.009), m("THIN", 50, 0.02, 1e5), m("DEAD", 50, 0), m("SOL", 20, 0.007)], { top: 3, minVolumeUsd: 5e6 });
   assert.deepEqual(ranked.map((r) => r.coin), ["KR200", "BTC", "SOL"]);
+  const { liquidationMove } = await import("../scripts/hllib.js");
+  assert.equal(liquidationMove(20), 0.025); // xyz:DRAM at 20x liquidated 2.44% from entry live
 });
