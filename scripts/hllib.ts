@@ -37,13 +37,21 @@ export interface TypedData {
 }
 
 async function info<T>(body: unknown): Promise<T> {
-  const res = await fetch(`${API}/info`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`/info ${res.status}`);
-  return (await res.json()) as T;
+  // Reads are safe to repeat: back off on rate limits (a wide hot-wheel scan
+  // makes a candle request per market).
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${API}/info`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 429 && attempt < 5) {
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      continue;
+    }
+    if (!res.ok) throw new Error(`/info ${res.status}`);
+    return (await res.json()) as T;
+  }
 }
 
 export interface AssetInfo {
@@ -96,6 +104,9 @@ export async function universe(): Promise<string[]> {
 // what's live right now (Asia hours, a squeeze, a news day) shifts the ranking.
 export interface HotMarket { coin: string; dex: string; maxLeverage: number; sigma1h: number; swing: number; dayVolumeUsd: number }
 
+/** Never on the wheel: private-company pre-IPO perps the show won't trade. */
+export const HOT_EXCLUDE = new Set(["io:ANTH", "io:OAI"]);
+
 /** Hourly σ from consecutive closes sampled every `minutes`. */
 export function hourlySigma(closes: number[], minutes: number): number {
   const r: number[] = [];
@@ -120,6 +131,8 @@ export async function scanHot(dexes: string[], opts: { top: number; minVolumeUsd
     const liquid = meta.universe.map((u, i) => ({ u, vol: Number(ctxs[i]?.dayNtlVlm ?? 0), px: Number(ctxs[i]?.markPx) }))
       .filter(({ u, vol, px }) => !u.isDelisted && vol >= opts.minVolumeUsd && px > 0 && Number.isInteger(u.maxLeverage) && u.maxLeverage >= 1);
     for (const { u, vol } of liquid) {
+      if (HOT_EXCLUDE.has(u.name)) continue;
+      await new Promise((r) => setTimeout(r, 60)); // stay under the /info rate limit
       const candles = await info<{ c: string }[]>({ type: "candleSnapshot", req: { coin: u.name, interval: "15m", startTime: now - hours * 3_600_000, endTime: now } });
       const sigma1h = hourlySigma(candles.map((c) => Number(c.c)), 15);
       out.push({ coin: u.name, dex, maxLeverage: u.maxLeverage, sigma1h, swing: sigma1h * u.maxLeverage, dayVolumeUsd: vol });
