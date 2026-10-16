@@ -18,6 +18,7 @@ import jsSha3 from "js-sha3";
 import { readEpisode, type Episode } from "../src/episode.js";
 import {
   agentTypedData,
+  API,
   assetInfo,
   formatPrice,
   formatSize,
@@ -26,6 +27,7 @@ import {
   NET,
   openPositions,
   postExchange,
+  scanHot,
   splitSig,
   universe,
   validateLeverage,
@@ -79,7 +81,50 @@ function tradingWallet(): string {
 const BASKET = ["BTC", "ETH", "SOL", "DOGE", "WIF", "kPEPE", "AVAX", "SUI", "LINK", "HYPE"];
 const LEV_WHEEL = [2, 3, 5, 5, 10, 10, 20]; // bigger rolls rarer, funnier
 
+// --hot: the wheel is the top markets by live σ(1h) × max leverage, always at
+// max leverage. Built fresh at spin time from every liquid market on the main
+// dex and the configured builder dexes (--all-dexes: every builder dex).
+async function rollHot(): Promise<void> {
+  const top = Number(arg("top") ?? 8), minVolumeUsd = Number(arg("min-vol") ?? 5_000_000);
+  if (!Number.isInteger(top) || top < 2 || !(minVolumeUsd > 0)) throw new Error("--top must be an integer ≥ 2 and --min-vol positive");
+  const dexes = process.argv.includes("--all-dexes")
+    ? ["", ...(await allDexes())]
+    : dexCandidates();
+  console.log(`\n  scanning ${dexes.map((d) => d || "main").join(", ")} for the hottest markets (≥ $${(minVolumeUsd / 1e6).toFixed(0)}M/day)…`);
+  const wheel = await scanHot(dexes, { top, minVolumeUsd });
+  if (wheel.length < 2) throw new Error("not enough liquid markets to spin");
+  console.log(`\n  🔥  THE HOT WHEEL (typical hour at max leverage, last 8h)\n`);
+  wheel.forEach((m, i) => console.log(`   ${String(i + 1).padStart(2)}. ${m.coin.padEnd(14)} ${String(m.maxLeverage).padStart(2)}×   ±${(m.swing * 100).toFixed(0)}% / hour   liq ~${(100 / m.maxLeverage).toFixed(1)}% away   $${(m.dayVolumeUsd / 1e6).toFixed(0)}M/day`));
+  const { picks, provenance } = spin();
+  const pick = wheel[picks[0]! % wheel.length]!;
+  const side = picks[1]! % 2 === 0 ? "long" : "short";
+  console.log(`\n  🎡  THE WHEEL HAS SPOKEN\n`);
+  console.log(`      ${side.toUpperCase()} ${pick.coin}  ·  ${pick.maxLeverage}× (max)\n`);
+  if (provenance) console.log(provenance);
+  console.log(`  next (note the -- separator so npm forwards the flags):`);
+  if (pick.dex) console.log(`    collateral lives per dex: HL_NET=${NET} npx tsx scripts/xfer.ts prepare --dex ${pick.dex} --amount 50  (sign, send)`);
+  if (pick.dex && !dexCandidates().includes(pick.dex)) console.log(`    add ${pick.dex} to UNDERPOD_DEXES so the dashboard tracks it`);
+  console.log(`    HL_NET=${NET} npm run hl -- prepare-leverage --coin ${pick.coin} --lev ${pick.maxLeverage}`);
+  console.log(`    HL_NET=${NET} npm run hl -- prepare-order --coin ${pick.coin} --side ${side} --usd 50 --lev ${pick.maxLeverage}\n`);
+}
+
+async function allDexes(): Promise<string[]> {
+  const res = await fetch(`${API}/info`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "perpDexs" }) });
+  const list = (await res.json()) as ({ name: string } | null)[];
+  return list.filter((d): d is { name: string } => !!d).map((d) => d.name);
+}
+
+// With --seed the roll is deterministic and verifiable: keccak256 of the
+// phrase picks the slots. Anyone can re-derive it at home.
+function spin(): { picks: number[]; provenance: string } {
+  const seed = arg("seed");
+  if (!seed) return { picks: [0, 1, 2].map(() => Math.floor(Math.random() * 0xffffffff)), provenance: "" };
+  const h = keccak256(seed);
+  return { picks: [0, 1, 2].map((i) => parseInt(h.slice(i * 8, i * 8 + 8), 16)), provenance: `  seed "${seed}" → keccak256 0x${h.slice(0, 16)}…\n` };
+}
+
 async function roll(): Promise<void> {
+  if (process.argv.includes("--hot")) return rollHot();
   // Only spin over coins that actually trade on this net — testnet is missing
   // chunks of the basket and we don't want to find out live. --any widens the
   // wheel to the entire listed universe (~180 perps of varying dignity).
@@ -91,18 +136,7 @@ async function roll(): Promise<void> {
   if (any) console.log(`\n  (full universe: ${basket.length} perps on ${NET})`);
   if (missing.length) console.log(`\n  (not listed on ${NET}, skipped: ${missing.join(", ")})`);
 
-  // With --seed the roll is deterministic and verifiable: keccak256 of the
-  // phrase picks coin / side / leverage. Anyone can re-derive it at home.
-  const seed = arg("seed");
-  let picks: number[];
-  let provenance = "";
-  if (seed) {
-    const h = keccak256(seed);
-    picks = [0, 1, 2].map((i) => parseInt(h.slice(i * 8, i * 8 + 8), 16));
-    provenance = `  seed "${seed}" → keccak256 0x${h.slice(0, 16)}…\n`;
-  } else {
-    picks = [0, 1, 2].map(() => Math.floor(Math.random() * 0xffffffff));
-  }
+  const { picks, provenance } = spin();
   const coin = basket[picks[0]! % basket.length]!;
   const side = picks[1]! % 2 === 0 ? "long" : "short";
   const { maxLeverage } = await assetInfo(coin);

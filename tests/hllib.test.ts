@@ -149,3 +149,15 @@ test("episode commands preserve the selected perp, reject overrides and pin the 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /rerun with HL_NET=mainnet/);
 });
+
+test("the hot wheel ranks liquid markets by hourly swing at max leverage", async () => {
+  const { hourlySigma, rankHot } = await import("../scripts/hllib.js");
+  // ±1% every 15 minutes is σ(15m) = 1%, so σ(1h) = 2%.
+  const closes = Array.from({ length: 33 }, (_, i) => 100 * Math.exp((i % 2 ? 0.01 : 0)));
+  const s = hourlySigma(closes, 15);
+  assert.ok(Math.abs(s - 0.02) < 1e-9, `got ${s}`);
+  assert.equal(hourlySigma([100, 101, 102], 15), 0); // too few points
+  const m = (coin: string, maxLeverage: number, sigma1h: number, dayVolumeUsd = 10e6) => ({ coin, dex: "", maxLeverage, sigma1h, swing: sigma1h * maxLeverage, dayVolumeUsd });
+  const ranked = rankHot([m("BTC", 40, 0.004), m("KR200", 20, 0.009), m("THIN", 50, 0.02, 1e5), m("DEAD", 50, 0), m("SOL", 20, 0.007)], { top: 3, minVolumeUsd: 5e6 });
+  assert.deepEqual(ranked.map((r) => r.coin), ["KR200", "BTC", "SOL"]);
+});
