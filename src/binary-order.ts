@@ -10,7 +10,7 @@ export function maximumEntryCost(shares: number, limitPrice: number, feeCoeffici
 export function sizeBinaryOrder(market: EpisodeMarket, quote: BinaryQuote, budget: number, limit: number, now = Date.now()): number {
   if (!Number.isFinite(budget) || budget <= 0 || limit < 0.4 || limit > 0.6) throw new Error("Invalid binary budget or entry limit");
   if (now >= market.endsAt || now < market.startsAt - 90_000) throw new Error("Binary market is outside its entry window");
-  if (quote.status !== "MARKET_STATE_OPEN" || now - quote.updatedAt > 15_000 || quote.updatedAt > now + 5_000) throw new Error("Binary order book is closed or stale");
+  if (!quote.open || now - quote.updatedAt > 15_000 || quote.updatedAt > now + 5_000) throw new Error("Binary order book is closed or stale");
   if (quote.buyPrice === null || quote.buyPrice < 0.4 || quote.buyPrice > limit) throw new Error("Binary entry must be quoted between $0.40 and the chosen limit (at most $0.60)");
   const fee = market.feeCoefficient;
   if (fee === null || !Number.isFinite(fee) || fee < 0 || fee > 1) throw new Error("Market fee coefficient unavailable; cannot guarantee the binary budget");

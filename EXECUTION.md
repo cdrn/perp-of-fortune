@@ -3,17 +3,21 @@
 ## Default show: Bitcoin binary + thematic perp
 
 Research the episode theme and select one listed Hyperliquid perp with a short
-thesis. Every episode also includes one **hourly BTC up/down contract on
-Polymarket US**, selected using the venue's typed BTC/hourly contract metadata.
-The episode window is the price-measurement window, not the later market expiry.
-Plan close enough to the recording that the venue has listed that window.
+thesis. Every episode also includes one **hourly Bitcoin double-or-nothing
+binary**. The default venue is **Kalshi**: the `KXBTCD` hourly "BTC price
+above/below" ladder, where the strike quoted nearest 50 cents for the chosen
+side is the contract (UP buys YES, "BTC finishes above the strike"; DOWN buys
+NO). `--venue polymarket-us` selects the venue's typed BTC hourly up/down
+contract instead. The episode window is the price-measurement hour, not the
+later market expiry. Plan close enough to the recording that the venue has
+listed that hour.
 
 ```bash
 HL_NET=mainnet npm run episode -- plan \
   --theme "Episode theme" --coin SOL --side long \
   --thesis "Explain the connection to this episode" \
   --binary-side up --start 2026-10-02T20:00:00-07:00 \
-  --binary-budget 50 --perp-margin 50 --lev max
+  --binary-budget 50 --perp-margin 50 --lev max [--venue kalshi|kalshi-demo|polymarket-us]
 npm run episode -- show
 ```
 
@@ -32,12 +36,23 @@ or partially fills, reconcile it and report the actual state.
 
 ### Binary account and execution
 
-The operator requires an eligible **Polymarket US** account, funds and an API
-key/Ed25519 secret from that account's developer settings. Provide
-`PM_US_API_KEY` and `PM_US_SECRET_KEY` only in the operator environment through a
-secret manager. Never paste them into chat, commands, Git or the dashboard `.env`.
-The Hyperliquid/sigil trade-only permission does not apply to this account;
-verify its permissions separately. Polymarket US orders use real money;
+**Kalshi (default).** The operator requires a funded Kalshi account and an API
+key from its settings: a key ID plus a downloaded RSA private key. Provide
+`KALSHI_API_KEY_ID` and `KALSHI_PRIVATE_KEY_FILE` (path to the `.key` PEM; or
+`KALSHI_PRIVATE_KEY` with the PEM text) only in the operator environment through
+a secret manager. Demo and production credentials are separate; `--venue
+kalshi-demo` sends every request to the demo API, so a production key cannot
+trade there and vice versa. Rehearse on demo first. Kalshi has no order preview
+endpoint: `prepare-binary` bounds the taker fee locally (0.07 × contracts × P ×
+(1 − P), at most 1.75 cents per contract) and refuses sizes that could exceed
+the budget.
+
+**Polymarket US.** Requires an eligible account and an API key/Ed25519 secret;
+provide `PM_US_API_KEY` and `PM_US_SECRET_KEY` the same way.
+
+Never paste credentials into chat, commands, Git or the dashboard `.env`. The
+Hyperliquid/sigil trade-only permission does not apply to these accounts; verify
+their permissions separately. Kalshi and Polymarket US orders use real money;
 `HL_NET=testnet` affects only the perp.
 
 ```bash
@@ -47,23 +62,29 @@ npm run episode -- send-binary --confirm EPISODE_ID
 npm run episode -- sync-binary --watch
 ```
 
-Preparation checks holdings, reserves fees within the budget, and calls the
-venue's preview; it places no order. Preparations expire after 60 seconds. Send
-rechecks listing/book/holdings/preview, then submits one IOC limit order. DOWN
-orders use the venue's YES-price convention internally. Only confirmed fills
-produce a position; partial or zero fills never become a full-budget position.
+Preparation re-selects the Kalshi strike nearest 50 cents inside the planned
+hourly event (Polymarket US has one contract per hour, so nothing changes),
+checks holdings, reserves fees within the budget, and calls the venue's preview
+where one exists; it places no order. Preparations expire after 60 seconds. Send
+re-reads the exact prepared contract, rechecks book/holdings/bounds, then submits
+one IOC limit order with a saved client order ID. DOWN orders use each venue's
+YES-price convention internally (Kalshi: an `ask` on the YES book at 1 − the NO
+limit). Only confirmed fills produce a position; partial or zero fills never
+become a full-budget position.
 
 Keep `sync-binary --watch` running through account settlement. It authenticates
-only in the operator and writes receipts for the read-only dashboard. If holdings
-differ from this episode's receipt, P&L is withheld. Use a dedicated episode
+only in the operator and writes receipts for the read-only dashboard. Final P&L
+needs the account's own settlement record (Kalshi `/portfolio/settlements`,
+Polymarket US position-resolution activity), not just the public result. If
+holdings differ from this episode's receipt, P&L is withheld. Use a dedicated episode
 position; other trades in the same market break attribution. The intended binary
 strategy holds through resolution; manual early exits are not automatically
 attributed to the episode.
 
 If submission times out or crashes, **do not submit again**. Durable state blocks
 a retry. If an ID was recorded, run `sync-binary`; otherwise find the original
-order in Polymarket US and use `sync-binary --order-id ID`. A missing receipt does
-not prove failure. A leftover `.lock` after a crash requires checking that no
+order at the venue (the saved client order ID identifies it on Kalshi) and use
+`sync-binary --order-id ID`. A missing receipt does not prove failure. A leftover `.lock` after a crash requires checking that no
 operator is running before removing it; this does not clear an uncertain send.
 
 ### Thematic perp

@@ -1,8 +1,10 @@
 import { POLL_MS } from "./config.js";
 import { readEpisode, type Episode } from "./episode.js";
-import { PolymarketUSClient } from "./polymarket-us.js";
+import type { BinaryMarketData, BinaryVenueId } from "./binary-types.js";
+import { binaryMarketData, venueLabel } from "./binary-venue.js";
 
 export interface EpisodeQuote {
+  open: boolean;
   buyPrice: number | null;
   sellPrice: number | null;
   availableShares: number;
@@ -14,6 +16,8 @@ export interface EpisodeQuote {
 export interface BinaryView {
   status: "planned" | "submitted" | "live" | "awaiting_result" | "settled" | "unavailable";
   side: "up" | "down";
+  venue: BinaryVenueId;
+  venueLabel: string;
   marketTitle: string;
   marketUrl: string;
   startsAt: number;
@@ -46,15 +50,15 @@ export function binaryView(e: Episode, quote: EpisodeQuote | null, yesSettlement
   const holdingsKnown = shares !== null && !reconciliationStale;
   const exitValueUsd = !holdingsKnown ? null : settlementValue !== null
     ? b.finalSettlement?.payoutUsd ?? null
-    : quoteExpected && !quoteStale && quote?.status === "MARKET_STATE_OPEN" && quote.sellPrice !== null && quote.sellAvailableShares >= shares
+    : quoteExpected && !quoteStale && quote?.open && quote.sellPrice !== null && quote.sellAvailableShares >= shares
       ? shares * quote.sellPrice : null;
   const principal = receipt?.totalCostUsd ?? null;
   const fees = receipt?.feesUsd ?? null;
   const basis = principal !== null && fees !== null ? principal + fees : null;
   const pnl = basis !== null && exitValueUsd !== null ? exitValueUsd - basis : null;
   return {
-    status, side: b.side, marketTitle: m.title,
-    marketUrl: `https://polymarket.us/event/${encodeURIComponent(m.eventSlug)}`,
+    status, side: b.side, venue: m.venue, venueLabel: venueLabel(m.venue), marketTitle: m.title,
+    marketUrl: binaryMarketData(m.venue).marketUrl(m),
     startsAt: m.startsAt, endsAt: m.endsAt, settlementAt: m.settlementAt,
     quote, shares, costUsd: principal, feesUsd: fees, exitValueUsd,
     pnlUsd: pnl, roiPct: pnl !== null && basis && basis > 0 ? pnl / basis * 100 : null,
@@ -71,7 +75,16 @@ export interface BinaryDataSource {
 
 export class EpisodeTracker {
   private state: { episode: Episode | null; binary: BinaryView | null; error?: string } = { episode: null, binary: null };
-  constructor(private client: BinaryDataSource = new PolymarketUSClient(), private read = readEpisode) {}
+  private readonly sources = new Map<BinaryVenueId, BinaryMarketData>();
+  /** Without an explicit source, public market data is resolved from the saved episode's venue. */
+  constructor(private client: BinaryDataSource | null = null, private read = readEpisode) {}
+
+  private source(venue: BinaryVenueId): BinaryDataSource {
+    if (this.client) return this.client;
+    let source = this.sources.get(venue);
+    if (!source) { source = binaryMarketData(venue); this.sources.set(venue, source); }
+    return source;
+  }
 
   get current() {
     const b = this.state.binary;
@@ -83,9 +96,10 @@ export class EpisodeTracker {
     if (!episode) { this.state = { episode: null, binary: null }; return; }
     const now = Date.now();
     try {
+      const client = this.source(episode.binary.market.venue);
       const [quoteResult, settlementResult] = await Promise.allSettled([
-        now < episode.startsAt - 90_000 ? Promise.resolve(null) : this.client.getQuote(episode.binary.market.slug, episode.binary.side),
-        now >= episode.endsAt ? this.client.getSettlement(episode.binary.market.slug) : Promise.resolve(null),
+        now < episode.startsAt - 90_000 ? Promise.resolve(null) : client.getQuote(episode.binary.market.slug, episode.binary.side),
+        now >= episode.endsAt ? client.getSettlement(episode.binary.market.slug) : Promise.resolve(null),
       ]);
       const quote = quoteResult.status === "fulfilled" ? quoteResult.value : null;
       const settlement = episode.binary.finalSettlement?.yesValue ?? (settlementResult.status === "fulfilled" ? settlementResult.value : null);

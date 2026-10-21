@@ -30,7 +30,7 @@ function episode(now = Date.now()): Episode {
 }
 
 function quote(now = Date.now()): EpisodeQuote {
-  return { buyPrice: .54, sellPrice: .52, availableShares: 1000, sellAvailableShares: 1000,
+  return { open: true, buyPrice: .54, sellPrice: .52, availableShares: 1000, sellAvailableShares: 1000,
     updatedAt: now, status: 'MARKET_STATE_OPEN' };
 }
 

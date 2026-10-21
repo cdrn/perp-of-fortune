@@ -157,7 +157,7 @@ function fixture(t: TestContext) {
   };
   const plan = () => {
     const result = run('plan', '--theme', 'Consumer crypto returns', '--coin', 'SOL', '--side', 'long',
-      '--thesis', 'Solana fits the consumer-app theme.', '--binary-side', 'down', '--start', new Date(START).toISOString(), '--json');
+      '--thesis', 'Solana fits the consumer-app theme.', '--binary-side', 'down', '--start', new Date(START).toISOString(), '--venue', 'polymarket-us', '--json');
     success(result);
     return readEpisode();
   };

@@ -6,32 +6,8 @@ import { createPrivateKey, sign } from 'node:crypto';
  * https://docs.polymarket.us/api-reference/markets/get-market-by-slug
  * https://docs.polymarket.us/trader-guide/crypto-schema
  */
-export type BinarySide = 'up' | 'down';
-export interface BinaryMarket {
-  venue: 'polymarket-us';
-  slug: string;
-  eventSlug: string;
-  title: string;
-  startsAt: number;
-  endsAt: number;
-  /** Exchange expiry; this is not a guarantee that funds settle at this time. */
-  settlementAt: number | null;
-  rules: string;
-  status: string;
-  priceTick: number;
-  minimumShares: number;
-  feeCoefficient: number | null;
-  priceToBeat: number | null;
-}
-export interface BinaryQuote {
-  buyPrice: number | null;
-  sellPrice: number | null;
-  /** Depth at the quoted best price, not total depth across worse prices. */
-  availableShares: number;
-  sellAvailableShares: number;
-  updatedAt: number;
-  status: string;
-}
+import type { BinaryMarket, BinaryOrderReceipt, BinaryQuote, BinarySide, DiscoveryOptions } from './binary-types.js';
+export type { BinaryMarket, BinaryOrderReceipt, BinaryQuote, BinarySide, DiscoveryOptions } from './binary-types.js';
 export interface PMAmount { value: string; currency: string }
 export interface PMOrder {
   id?: string;
@@ -61,18 +37,6 @@ export interface PMExecution {
   commissionNotionalCollected?: PMAmount;
 }
 export interface PMCreateOrderResponse { id: string; executions?: PMExecution[] }
-export interface BinaryOrderReceipt {
-  id: string;
-  marketSlug: string;
-  side: BinarySide;
-  filledShares: number;
-  averagePrice: number | null;
-  /** Filled contract principal only. Entry fees are separately reported. */
-  totalCostUsd: number | null;
-  feesUsd: number | null;
-  status: string;
-  updatedAt: number;
-}
 export interface BuyOrder {
   marketSlug: string;
   intent: 'ORDER_INTENT_BUY_LONG' | 'ORDER_INTENT_BUY_SHORT';
@@ -83,14 +47,6 @@ export interface BuyOrder {
   manualOrderIndicator: 'MANUAL_ORDER_INDICATOR_AUTOMATIC';
   synchronousExecution: true;
   maxBlockTime: '5';
-}
-export interface DiscoveryOptions {
-  episodeStart: number;
-  targetEnd?: number;
-  now?: number;
-  minRemainingMs?: number;
-  /** Planning only. Trading must still check the live book is OPEN. */
-  allowUpcoming?: boolean;
 }
 export interface PMPosition {
   netPosition?: string;
@@ -212,6 +168,7 @@ export function quoteFromBook(response: unknown, side: BinarySide): BinaryQuote 
   const buy = buyLevels[0], sell = sellLevels[0];
   const open = status === 'MARKET_STATE_OPEN';
   return {
+    open,
     buyPrice: open && buy ? (side === 'up' ? buy.price : cents(1 - buy.price)) : null,
     sellPrice: open && sell ? (side === 'up' ? sell.price : cents(1 - sell.price)) : null,
     availableShares: open && buy ? buyLevels.filter(x => x.price === buy.price).reduce((sum, x) => sum + x.size, 0) : 0,

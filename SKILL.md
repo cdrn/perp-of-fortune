@@ -1,8 +1,9 @@
 ---
 name: perp-of-fortune
 description: >
-  Run the paired Perp of Fortune segment: always select one hourly Bitcoin up/down
-  binary on Polymarket US and one thematic Hyperliquid perp, including HIP-3
+  Run the paired Perp of Fortune segment: always select one hourly Bitcoin
+  double-or-nothing binary (Kalshi above/below strike by default, or Polymarket
+  US up/down) and one thematic Hyperliquid perp, including HIP-3
   commodities/stocks. Research the theme, save both picks, then use the respective
   venue's approval/execution path and read-only dashboard. Also supports explicit
   standalone perp close, collateral transfers and Hyperliquid funding.
@@ -14,10 +15,14 @@ description: >
 
 For a new Perp of Fortune episode, prepare **both** of these:
 
-1. One **BTC hourly up/down binary on Polymarket US**, with its price window
-   aligned to the recording hour. Always Bitcoin; never silently substitute a
-   15-minute, daily, range or non-BTC contract. Use official typed market terms,
-   not a title or a model's guess. Keep outcome cutoff and later settlement distinct.
+1. One **hourly Bitcoin double-or-nothing binary** whose hour is the recording
+   hour. Default venue **Kalshi** (`KXBTCD`, "BTC above $X at the top of the
+   hour", settled on CF Benchmarks BRTI): the strike quoted nearest 50 cents for
+   the chosen side; UP buys YES, DOWN buys NO. `--venue polymarket-us` uses that
+   venue's BTC hourly up/down contract. Always Bitcoin, always hourly; never
+   silently substitute a 15-minute, daily, bracket/range or non-BTC contract. Use
+   official typed market terms, not a title or a model's guess. Keep outcome
+   cutoff and later settlement distinct.
 2. One **thematic Hyperliquid perp**, chosen from the episode's topics/news with
    a short, specific thesis. Preserve HIP-3 choices when relevant. Use current
    venue leverage caps; do not claim that max leverage guarantees a 20% move.
@@ -31,10 +36,12 @@ HL_NET=mainnet npm run episode -- plan \
   --theme "Episode theme" --coin SOL --side long \
   --thesis "Why this market connects to the episode" \
   --binary-side up --start 2026-10-02T20:00:00-07:00 \
-  --binary-budget 50 --perp-margin 50 --lev max
+  --binary-budget 50 --perp-margin 50 --lev max [--venue kalshi|kalshi-demo|polymarket-us]
 ```
 
-Use the actual recording date and an explicit timezone. If unavailable, report
+Use the actual recording date and an explicit timezone. Rehearse a new setup
+with `--venue kalshi-demo` (paper money, separate demo credentials) before a
+real-money episode. If unavailable, report
 the missing listing rather than silently changing format. Planning only reads
 public data; it does not authorize or submit trades. Defaults are $50 for the
 binary and $50 of perp margin, plus perp fees; confirm spending within the user's existing authority
@@ -43,13 +50,16 @@ fees reserved inside its budget. Changing the dollar stake does not change the
 percentage volatility. Choose binary direction and explain it on air, or omit
 `--binary-side` for a recorded random side.
 
-Binary execution: `episode prepare-binary` → review preview →
-`episode send-binary --confirm EPISODE_ID` → `episode sync-binary --watch`.
-The operator needs Polymarket US API credentials in its private environment;
-the dashboard loads public settings only. Do not reuse an international CLOB
-wallet or claim that Hyperliquid's trade-only credential scope applies here.
-There is no binary testnet. Never replay an uncertain send; reconcile the
-recorded order ID (or recover it from the venue) before proceeding.
+Binary execution: `episode prepare-binary` → review the printed contract,
+strike, shares and maximum cost → `episode send-binary --confirm EPISODE_ID` →
+`episode sync-binary --watch`. On Kalshi, prepare re-selects the strike nearest
+50 cents from the live book; send is pinned to that contract. The operator needs
+the venue's credentials in its private environment (`KALSHI_API_KEY_ID` +
+`KALSHI_PRIVATE_KEY_FILE`, or `PM_US_API_KEY` + `PM_US_SECRET_KEY`); the
+dashboard loads public settings only. Do not claim that Hyperliquid's trade-only
+credential scope applies here. Kalshi demo is the only paper mode. Never replay
+an uncertain send; reconcile the recorded order ID (or recover it from the venue
+via the saved client order ID) before proceeding.
 
 Perp execution: use `hl prepare-leverage --episode`, sign/send, then
 `hl prepare-order --episode`, sign/send, on the saved network. The CLI verifies

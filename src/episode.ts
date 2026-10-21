@@ -2,33 +2,11 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-export interface EpisodeMarket {
-  venue: "polymarket-us";
-  slug: string;
-  eventSlug: string;
-  title: string;
-  startsAt: number;
-  endsAt: number;
-  settlementAt: number | null;
-  rules: string;
-  priceTick: number;
-  minimumShares: number;
-  feeCoefficient: number | null;
-  priceToBeat: number | null;
-  status: string;
-}
+import type { BinaryMarket, BinaryOrderReceipt } from "./binary-types.js";
+import { isBinaryVenue } from "./binary-types.js";
 
-export interface BinaryReceipt {
-  id: string;
-  marketSlug: string;
-  side: "up" | "down";
-  filledShares: number;
-  averagePrice: number | null;
-  totalCostUsd: number | null; // principal paid; fees stored separately
-  feesUsd: number | null;
-  status: string;
-  updatedAt: number;
-}
+export type EpisodeMarket = BinaryMarket;
+export type BinaryReceipt = BinaryOrderReceipt;
 
 export interface Episode {
   version: 1;
@@ -55,6 +33,8 @@ export interface Episode {
       expiresAt: number;
       state: "prepared" | "sending" | "submitted" | "uncertain";
       orderId?: string;
+      /** Idempotency key sent with the submission; lets an uncertain send be found at the venue. */
+      clientOrderId?: string;
     };
   };
 }
@@ -77,7 +57,7 @@ export function validateEpisode(e: Episode): Episode {
   if (!Number.isInteger(e.perp.leverage) || e.perp.leverage < 1) throw new Error("Invalid perp leverage");
   if (!(e.binary.limitPrice >= 0.4 && e.binary.limitPrice <= 0.6)) throw new Error("Binary entry limit must be between $0.40 and $0.60");
   const m = e.binary.market;
-  if (m.venue !== "polymarket-us" || !m.slug || !m.eventSlug || !m.rules) throw new Error("Invalid binary market");
+  if (!isBinaryVenue(m.venue) || !m.slug || !m.eventSlug || !m.rules) throw new Error("Invalid binary market");
   if (!Number.isFinite(m.startsAt) || m.endsAt - m.startsAt !== 3_600_000 || e.startsAt !== m.startsAt || e.endsAt !== m.endsAt) throw new Error("Episode must match one complete hourly binary window");
   if (e.binary.order) {
     const o = e.binary.order;

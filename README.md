@@ -3,10 +3,17 @@
 > One hourly Bitcoin binary. One thematic perp. Two fortunes to follow live on the podcast.
 
 A read-only **Underwater-o-meter** dashboard for a paired *Permanent Underpod*
-episode. Every episode selects exactly one **BTC hourly up/down binary on
-Polymarket US** and one **Hyperliquid perp tied to the episode's theme**. The
-binary supplies the timed result; the perp supplies the story, funding bleed,
-and distance to liquidation. The old standalone perp wheel and replay still work.
+episode. Every episode selects exactly one **hourly Bitcoin double-or-nothing
+binary** and one **Hyperliquid perp tied to the episode's theme**. The binary
+supplies the timed result; the perp supplies the story, funding bleed, and
+distance to liquidation. The old standalone perp wheel and replay still work.
+
+The binary venue defaults to **Kalshi** (`--venue kalshi`): the hourly
+`KXBTCD` "Bitcoin price above/below" ladder settles on CF Benchmarks' BRTI at
+the top of the hour, and the operator picks the strike quoted nearest 50 cents
+for the chosen side, so a win roughly doubles the stake. `--venue kalshi-demo`
+runs the identical flow against Kalshi's paper environment. `--venue
+polymarket-us` keeps the original BTC up/down contract.
 
 ## Prepare an episode
 
@@ -20,7 +27,7 @@ HL_NET=mainnet npm run episode -- plan \
   --theme "Crypto infrastructure" --coin SOL --side long \
   --thesis "Our episode focuses on activity on Solana" \
   --binary-side up --start 2026-10-02T20:00:00-07:00 \
-  --binary-budget 50 --perp-margin 50 --lev max
+  --binary-budget 50 --perp-margin 50 --lev max [--venue kalshi|kalshi-demo|polymarket-us]
 npm run dev
 ```
 
@@ -31,12 +38,16 @@ of perp margin**, plus perp fees. The binary budget includes entry fees. `--lev 
 uses the selected perp's current supported maximum. Binary entries must be quoted
 at 40–60 cents; the default maximum price is 60 cents. Omitting `--start` selects
 the next full hour. The binary side is random unless `--binary-side` is provided.
+On Kalshi the planned strike is provisional: `prepare-binary` re-selects the
+strike nearest 50 cents from the live book inside the same hourly event, then
+`send-binary` is pinned to that exact contract.
 
 See [EXECUTION.md](EXECUTION.md) for separate preview/approval/send steps. Public
-planning and quotes need no binary credentials. Real orders require an eligible
-Polymarket US account; international Polymarket credentials are incompatible.
-There is no simulated-fill fallback or binary testnet mode. Hyperliquid defaults
-to testnet unless explicitly selected with `HL_NET=mainnet`.
+planning and quotes need no binary credentials. Real orders require a funded
+Kalshi account with an API key (RSA key ID + downloaded private key), or an
+eligible Polymarket US account for that venue. Kalshi's demo environment is the
+only paper mode; there is no simulated-fill fallback. Hyperliquid defaults to
+testnet unless explicitly selected with `HL_NET=mainnet`.
 
 ## The sigil angle
 
@@ -45,10 +56,10 @@ through a Hyperliquid **API/agent wallet** that has *trade-only* permission — 
 **physically cannot withdraw funds**. So we can hand an AI live trading keys on air
 and it cannot rug the show. That's the whole story, and it's literally true.
 
-That permission claim applies to the Hyperliquid agent key only. Polymarket US
-uses its own authenticated API; verify that key's permissions separately. The
-dashboard submits no orders and never loads binary credentials from `.env`.
-Only the operator receives binary credentials through its environment.
+That permission claim applies to the Hyperliquid agent key only. Kalshi and
+Polymarket US use their own authenticated APIs; verify those keys' permissions
+separately. The dashboard submits no orders and never loads binary credentials
+from `.env`. Only the operator receives binary credentials through its environment.
 
 ## Run locally
 
@@ -91,6 +102,8 @@ time, real close PnL, liquidations detected from the liquidation fill itself).
 - `public/index.html` — the Underwater-o-meter.
 - `scripts/hl.ts` + `scripts/hllib.ts` — operator CLI: roll the wheel, prepare/send orders via sigil. Never imported by the dash.
 - `scripts/episode.ts` — select the pair, preview/submit the binary, reconcile the account.
+- `src/binary-types.ts` + `src/binary-venue.ts` — venue-neutral binary contract types and the registry mapping a venue to public market data (dashboard) or an authenticated operator (CLI only).
+- `src/kalshi.ts` — Kalshi `KXBTCD` hourly strike selection, RSA-PSS request signing, orderbook quotes, IOC orders, positions and settlements.
 - `src/polymarket-us.ts` — exact BTC contract validation, public quotes/settlement and explicit authenticated API client.
 - `src/episode.ts` + `src/episode-tracker.ts` — atomic persistence and binary tracking; selected, filled, awaiting-result and settled states remain distinct.
 

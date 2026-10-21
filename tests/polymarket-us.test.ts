@@ -71,10 +71,10 @@ test('ambiguous matching markets are rejected while duplicated search rows are h
 });
 test('NO buy uses complement of best YES bid; NO exit uses complement of YES ask', () => {
   assert.deepEqual(quoteFromBook(book(), 'down'), {
-    buyPrice: 0.58, sellPrice: 0.55, availableShares: 12, sellAvailableShares: 7, updatedAt: START, status: 'MARKET_STATE_OPEN',
+    open: true, buyPrice: 0.58, sellPrice: 0.55, availableShares: 12, sellAvailableShares: 7, updatedAt: START, status: 'MARKET_STATE_OPEN',
   });
   assert.deepEqual(quoteFromBook(book(), 'up'), {
-    buyPrice: 0.45, sellPrice: 0.42, availableShares: 7, sellAvailableShares: 12, updatedAt: START, status: 'MARKET_STATE_OPEN',
+    open: true, buyPrice: 0.45, sellPrice: 0.42, availableShares: 7, sellAvailableShares: 12, updatedAt: START, status: 'MARKET_STATE_OPEN',
   });
 });
 test('closed, empty, malformed or crossed books never masquerade as executable quotes', () => {

@@ -23,7 +23,7 @@ function fixture(): Episode {
   };
 }
 function quote(): EpisodeQuote {
-  return { buyPrice: 0.51, sellPrice: 0.49, availableShares: 1000, sellAvailableShares: 1000, updatedAt: now, status: "MARKET_STATE_OPEN" };
+  return { open: true, buyPrice: 0.51, sellPrice: 0.49, availableShares: 1000, sellAvailableShares: 1000, updatedAt: now, status: "MARKET_STATE_OPEN" };
 }
 function filled(): Episode {
   const e = fixture();
@@ -52,7 +52,7 @@ test("binary sizing reserves fees, respects depth and rejects late, stale or lop
   const shares = sizeBinaryOrder(m, quote(), 50, 0.6, now);
   assert.ok(maximumEntryCost(shares, 0.6, m.feeCoefficient!) <= 50);
   assert.equal(sizeBinaryOrder(m, { ...quote(), availableShares: 3 }, 50, 0.6, now), 3);
-  for (const q of [{ ...quote(), updatedAt: now - 16_000 }, { ...quote(), buyPrice: 0.9 }, { ...quote(), buyPrice: 0.1 }, { ...quote(), status: "MARKET_STATE_CLOSED" }]) {
+  for (const q of [{ ...quote(), updatedAt: now - 16_000 }, { ...quote(), buyPrice: 0.9 }, { ...quote(), buyPrice: 0.1 }, { ...quote(), open: false, status: "MARKET_STATE_CLOSED" }]) {
     assert.throws(() => sizeBinaryOrder(m, q, 50, 0.6, now));
   }
   assert.throws(() => sizeBinaryOrder({ ...m, feeCoefficient: null }, quote(), 50, 0.6, now), /fee/);
@@ -97,7 +97,7 @@ test("quotes cannot claim executable exit value at or after the binary cutoff", 
     assert.equal(view.exitValueUsd, null);
     assert.equal(view.pnlUsd, null);
   }
-  assert.equal(binaryView(filled(), { ...quote(), status: "MARKET_STATE_HALTED" }, null, now).exitValueUsd, null);
+  assert.equal(binaryView(filled(), { ...quote(), open: false, status: "MARKET_STATE_HALTED" }, null, now).exitValueUsd, null);
 });
 
 test("a retired order book cannot suppress a separately confirmed binary result", async () => {

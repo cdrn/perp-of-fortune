@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "One hourly Bitcoin binary on Polymarket US and one thematic Hyperliquid perp, paired in a live podcast dashboard.",
+  "description": "One hourly Bitcoin binary (Kalshi above/below strike or Polymarket US up/down) and one thematic Hyperliquid perp, paired in a live podcast dashboard.",
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
