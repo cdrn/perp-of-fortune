@@ -150,3 +150,15 @@ test('request signatures are RSA-PSS over timestamp, method and the prefixed pat
   assert.throws(() => loadPrivateKey('not a key'), /PEM/);
   assert.throws(() => createAuthHeaders('', privateKey, 'GET', '/x'), /key ID/);
 });
+
+test('DOWN cost basis comes from each fill\'s NO price, and inconsistent fills are refused', async () => {
+  const { costFromFills } = await import('../src/kalshi.js');
+  const expected = { ticker: 'KXBTCD-X-T1', side: 'down' as const, shares: 10, limitPrice: 0.6 };
+  const fill = (count: string, yes: string, no: string, extra: Record<string, string> = {}) => ({ order_id: 'o1', ticker: 'KXBTCD-X-T1', count_fp: count, yes_price_dollars: yes, no_price_dollars: no, outcome_side: 'no', fee_cost: '0.05', ...extra });
+  const r = costFromFills({ fills: [fill('6.00', '0.4700', '0.5300'), fill('4.00', '0.4500', '0.5500'), { ...fill('9.00', '0.1', '0.9'), order_id: 'other' }] }, 'o1', expected);
+  assert.deepEqual(r, { shares: 10, averagePrice: 0.538, costUsd: 5.38, feesUsd: 0.1 });
+  assert.throws(() => costFromFills({ fills: [fill('1.00', '0.4700', '0.5000')] }, 'o1', expected), /Invalid Kalshi fill/);
+  assert.throws(() => costFromFills({ fills: [fill('1.00', '0.4700', '0.5300', { outcome_side: 'yes' })] }, 'o1', expected), /opposite side/);
+  assert.throws(() => costFromFills({ fills: [fill('1.00', '0.3500', '0.6500')] }, 'o1', expected), /more than the prepared limit/);
+  assert.deepEqual(costFromFills({ fills: [] }, 'o1', expected), { shares: 0, averagePrice: null, costUsd: 0, feesUsd: 0 });
+});

@@ -13,18 +13,23 @@
 // {action, nonce} so `send` signs/posts the identical bytes sigil signed.
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import jsSha3 from "js-sha3";
 import { readEpisode, type Episode } from "../src/episode.js";
 import {
   agentTypedData,
+  API,
   assetInfo,
   formatPrice,
   formatSize,
   IS_MAINNET,
+  type LivePosition,
   NET,
   openPositions,
+  liquidationMove,
   postExchange,
+  scanHot,
+  tradedCoins,
   splitSig,
   universe,
   validateLeverage,
@@ -78,7 +83,53 @@ function tradingWallet(): string {
 const BASKET = ["BTC", "ETH", "SOL", "DOGE", "WIF", "kPEPE", "AVAX", "SUI", "LINK", "HYPE"];
 const LEV_WHEEL = [2, 3, 5, 5, 10, 10, 20]; // bigger rolls rarer, funnier
 
+// --hot: the wheel is the top markets by live σ(1h) × max leverage, always at
+// max leverage. Built fresh at spin time from every liquid market on the main
+// dex and the configured builder dexes (--all-dexes: every builder dex).
+async function rollHot(): Promise<void> {
+  const top = Number(arg("top") ?? 8), minVolumeUsd = Number(arg("min-vol") ?? 5_000_000);
+  if (!Number.isInteger(top) || top < 2 || !(minVolumeUsd > 0)) throw new Error("--top must be an integer ≥ 2 and --min-vol positive");
+  const dexes = process.argv.includes("--all-dexes")
+    ? ["", ...(await allDexes())]
+    : dexCandidates();
+  // --fresh: nothing this wallet has ever traded.
+  const exclude = process.argv.includes("--fresh") ? await tradedCoins(tradingWallet()) : undefined;
+  console.log(`\n  scanning ${dexes.map((d) => d || "main").join(", ")} for the hottest markets (≥ $${(minVolumeUsd / 1e6).toFixed(0)}M/day)…`);
+  if (exclude) console.log(`  skipping ${exclude.size} markets already traded: ${[...exclude].sort().join(", ")}`);
+  const wheel = await scanHot(dexes, { top, minVolumeUsd, exclude });
+  if (wheel.length < 2) throw new Error("not enough liquid markets to spin");
+  console.log(`\n  🔥  THE HOT WHEEL (typical hour at max leverage, last 8h)\n`);
+  wheel.forEach((m, i) => console.log(`   ${String(i + 1).padStart(2)}. ${m.coin.padEnd(14)} ${String(m.maxLeverage).padStart(2)}×   ±${(m.swing * 100).toFixed(0)}% / hour   liq ~${(liquidationMove(m.maxLeverage) * 100).toFixed(1)}% away   $${(m.dayVolumeUsd / 1e6).toFixed(0)}M/day`));
+  const { picks, provenance } = spin();
+  const pick = wheel[picks[0]! % wheel.length]!;
+  const side = picks[1]! % 2 === 0 ? "long" : "short";
+  console.log(`\n  🎡  THE WHEEL HAS SPOKEN\n`);
+  console.log(`      ${side.toUpperCase()} ${pick.coin}  ·  ${pick.maxLeverage}× (max)\n`);
+  if (provenance) console.log(provenance);
+  console.log(`  next (note the -- separator so npm forwards the flags):`);
+  if (pick.dex) console.log(`    collateral lives per dex: HL_NET=${NET} npx tsx scripts/xfer.ts prepare --dex ${pick.dex} --amount 50  (sign, send)`);
+  if (pick.dex && !dexCandidates().includes(pick.dex)) console.log(`    add ${pick.dex} to UNDERPOD_DEXES so the dashboard tracks it`);
+  console.log(`    HL_NET=${NET} npm run hl -- prepare-leverage --coin ${pick.coin} --lev ${pick.maxLeverage}`);
+  console.log(`    HL_NET=${NET} npm run hl -- prepare-order --coin ${pick.coin} --side ${side} --usd 50 --lev ${pick.maxLeverage}\n`);
+}
+
+async function allDexes(): Promise<string[]> {
+  const res = await fetch(`${API}/info`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "perpDexs" }) });
+  const list = (await res.json()) as ({ name: string } | null)[];
+  return list.filter((d): d is { name: string } => !!d).map((d) => d.name);
+}
+
+// With --seed the roll is deterministic and verifiable: keccak256 of the
+// phrase picks the slots. Anyone can re-derive it at home.
+function spin(): { picks: number[]; provenance: string } {
+  const seed = arg("seed");
+  if (!seed) return { picks: [0, 1, 2].map(() => Math.floor(Math.random() * 0xffffffff)), provenance: "" };
+  const h = keccak256(seed);
+  return { picks: [0, 1, 2].map((i) => parseInt(h.slice(i * 8, i * 8 + 8), 16)), provenance: `  seed "${seed}" → keccak256 0x${h.slice(0, 16)}…\n` };
+}
+
 async function roll(): Promise<void> {
+  if (process.argv.includes("--hot")) return rollHot();
   // Only spin over coins that actually trade on this net — testnet is missing
   // chunks of the basket and we don't want to find out live. --any widens the
   // wheel to the entire listed universe (~180 perps of varying dignity).
@@ -90,18 +141,7 @@ async function roll(): Promise<void> {
   if (any) console.log(`\n  (full universe: ${basket.length} perps on ${NET})`);
   if (missing.length) console.log(`\n  (not listed on ${NET}, skipped: ${missing.join(", ")})`);
 
-  // With --seed the roll is deterministic and verifiable: keccak256 of the
-  // phrase picks coin / side / leverage. Anyone can re-derive it at home.
-  const seed = arg("seed");
-  let picks: number[];
-  let provenance = "";
-  if (seed) {
-    const h = keccak256(seed);
-    picks = [0, 1, 2].map((i) => parseInt(h.slice(i * 8, i * 8 + 8), 16));
-    provenance = `  seed "${seed}" → keccak256 0x${h.slice(0, 16)}…\n`;
-  } else {
-    picks = [0, 1, 2].map(() => Math.floor(Math.random() * 0xffffffff));
-  }
+  const { picks, provenance } = spin();
   const coin = basket[picks[0]! % basket.length]!;
   const side = picks[1]! % 2 === 0 ? "long" : "short";
   const { maxLeverage } = await assetInfo(coin);
@@ -115,6 +155,26 @@ async function roll(): Promise<void> {
   console.log(`  next (note the -- separator so npm forwards the flags):`);
   console.log(`    HL_NET=${NET} npm run hl -- prepare-leverage --coin ${coin} --lev ${lev}`);
   console.log(`    HL_NET=${NET} npm run hl -- prepare-order --coin ${coin} --side ${side} --usd 50 --lev ${lev}\n`);
+}
+
+// Pools to search when nothing names one: main dex first, then whatever .env
+// says we trade. UNDERPOD_DEXES (comma list) wins over the single UNDERPOD_DEX.
+function dexCandidates(): string[] {
+  const env = process.env.UNDERPOD_DEXES ?? process.env.UNDERPOD_DEX ?? "";
+  return [...new Set(["", ...env.split(",").map((d) => d.trim())])];
+}
+
+// A failed prepare must not leave the previous action in the stash: `send`
+// reads it blind, so a stale entry signs the wrong trade — e.g. re-opening at
+// the moment you meant to close. Clear first; only a successful prepare writes.
+function clearStash(): void {
+  for (const f of [STASH, TD_FILE]) {
+    try {
+      rmSync(f);
+    } catch {
+      /* nothing stashed — fine */
+    }
+  }
 }
 
 function emitTypedData(label: string, action: unknown, nonce: number): void {
@@ -187,14 +247,33 @@ async function prepareClose(): Promise<void> {
   const perp = episodePerp();
   const wallet = tradingWallet();
   const coinArg = perp?.coin ?? arg("coin");
-  const slip = Number(arg("slippage") ?? 0.005);
+  // Closes keep the wide band: an unfilled close at max leverage mid-show is the
+  // expensive failure, and the IOC still only fills at the best available price.
+  const slip = Number(arg("slippage") ?? 0.05);
   validateSlippage(slip);
-  // HIP-3 coins are addressed "dex:COIN" — read that dex's clearinghouse.
-  const dex = coinArg?.includes(":")
+  // HIP-3 coins are addressed "dex:COIN" — that prefix pins the dex, and --dex
+  // overrides. An episode coin without a prefix lives on the main dex. Otherwise
+  // search every pool we might be in rather than trusting UNDERPOD_DEX: the
+  // position is wherever it actually is, and a close that can't find it is the
+  // one failure you cannot afford mid-show.
+  const pinned = coinArg?.includes(":")
     ? coinArg.slice(0, coinArg.indexOf(":"))
-    : (process.env.UNDERPOD_DEX ?? "").trim();
-  const positions = await openPositions(wallet, dex);
-  if (!positions.length) throw new Error(`no open position on ${wallet} (net=${NET})`);
+    : perp ? "" : arg("dex");
+  const candidates = pinned !== undefined ? [pinned] : dexCandidates();
+  let positions: LivePosition[] = [];
+  for (const d of candidates) {
+    const found = await openPositions(wallet, d);
+    if (found.some((p) => !coinArg || p.coin === coinArg)) {
+      positions = found;
+      break;
+    }
+  }
+  if (!positions.length) {
+    const where = candidates.map((d) => (d === "" ? "main" : d)).join(", ");
+    throw new Error(
+      `no open ${coinArg ?? "position"} on ${wallet} in [${where}] (net=${NET})`,
+    );
+  }
   const pos = coinArg ? positions.find((p) => p.coin === coinArg) : positions[0];
   if (!pos) {
     throw new Error(`no open ${coinArg} position (open: ${positions.map((p) => p.coin).join(", ")})`);
@@ -227,6 +306,9 @@ async function send(): Promise<void> {
 }
 
 const cmd = process.argv[2];
+// Clear before dispatch so a prepare that throws can never leave a signable
+// stale action behind for `send` to pick up.
+if (cmd?.startsWith("prepare-")) clearStash();
 const run =
   cmd === "roll"
     ? roll

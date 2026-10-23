@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readEpisode, writeEpisode, withEpisodeLock, type Episode } from "../src/episode.js";
@@ -152,6 +152,47 @@ test("removing an episode cannot reconcile scoped testnet positions against lega
   const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", code], {
     cwd: process.cwd(), encoding: "utf8",
     env: { ...process.env, UNDERPOD_WALLET: wallet, UNDERPOD_EPISODE: join(directory, "removed-episode.json"), HL_API: "https://api.hyperliquid.xyz" },
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("a flipped episode perp stays visible and closes the old side's row", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "tracker-flip-test-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const wallet = `0x${"2".repeat(40)}`;
+  const episodePath = join(directory, "episode.json");
+  const startsAt = Date.parse("2026-10-01T20:00:00Z"), endsAt = startsAt + 3_600_000;
+  writeFileSync(episodePath, JSON.stringify({
+    version: 1, id: "flip", createdAt: startsAt, theme: "theme", startsAt, endsAt, perpNetwork: "testnet",
+    perp: { coin: "SOL", side: "long", leverage: 10, marginUsd: 50, thesis: "thesis" },
+    binary: { side: "up", budgetUsd: 50, limitPrice: 0.5, market: { venue: "polymarket-us", slug: "s", eventSlug: "e", title: "t",
+      startsAt, endsAt, settlementAt: null, rules: "r", priceTick: 0.01, minimumShares: 1, feeCoefficient: 0.07, priceToBeat: null, status: "x" } },
+  }));
+  const code = `
+    import assert from "node:assert/strict";
+    import { Store } from "./src/store.ts";
+    import { Tracker } from "./src/tracker.ts";
+    const store = new Store(":memory:");
+    store.bindScope("https://api.hyperliquid-testnet.xyz|" + process.env.UNDERPOD_WALLET);
+    store.insertOpen({ coin: "SOL", side: "LONG", entryPx: 100, leverage: 10, openedTs: 1 });
+    globalThis.fetch = async (_url, init) => {
+      const request = JSON.parse(init.body);
+      if (request.type === "metaAndAssetCtxs") return Response.json([{ universe: [{ name: "SOL" }] }, [{ markPx: "150", funding: "0", oraclePx: "150" }]]);
+      if (request.type === "clearinghouseState") return Response.json({
+        assetPositions: [{ position: { coin: "SOL", szi: "-2", entryPx: "150", positionValue: "300", unrealizedPnl: "0",
+          leverage: { type: "isolated", value: 10 }, liquidationPx: "160", marginUsed: "30", cumFunding: { sinceOpen: "0" } } }],
+        marginSummary: { accountValue: "100" }, withdrawable: "0" });
+      return Response.json([]);
+    };
+    const tracker = new Tracker(store);
+    await tracker.tick();
+    assert.equal(tracker.current.position?.side, "SHORT");
+    assert.equal(store.getOpen("SOL").side, "SHORT");
+    assert.equal(store.closedLog().length, 1);
+  `;
+  const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", code], {
+    cwd: process.cwd(), encoding: "utf8",
+    env: { ...process.env, UNDERPOD_WALLET: wallet, UNDERPOD_EPISODE: episodePath, UNDERPOD_DEXES: "" },
   });
   assert.equal(result.status, 0, result.stderr);
 });

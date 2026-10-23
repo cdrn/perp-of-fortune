@@ -42,6 +42,9 @@ export interface KalshiPositionsResponse { market_positions?: KalshiPosition[]; 
 export interface KalshiSettlement { ticker?: string; market_result?: string; yes_count_fp?: string; no_count_fp?: string; revenue?: number; settled_time?: string; fee_cost?: string }
 export interface KalshiSettlementsResponse { settlements?: KalshiSettlement[]; cursor?: string }
 export interface ExpectedOrder { ticker: string; side: BinarySide; shares: number; limitPrice: number }
+export interface KalshiFill { order_id?: string; ticker?: string; count_fp?: string; yes_price_dollars?: string; no_price_dollars?: string; outcome_side?: string; fee_cost?: string }
+export interface KalshiFillsResponse { fills?: KalshiFill[]; cursor?: string }
+export interface KalshiOrdersResponse { orders?: KalshiOrder[]; cursor?: string }
 
 type JsonObject = Record<string, unknown>;
 const HOUR = 60 * 60 * 1000;
@@ -220,6 +223,24 @@ export function normalizeOrder(response: KalshiOrderResponse | KalshiOrder, expe
   };
 }
 
+/** Cost basis from the order's fills. Each fill carries both legs' prices, so the price
+ * paid for this side is explicit; the order-level fill cost doesn't say which leg it's in. */
+export function costFromFills(response: KalshiFillsResponse, orderId: string, expected: ExpectedOrder): { shares: number; averagePrice: number | null; costUsd: number; feesUsd: number } {
+  const fills = array(response.fills).map(object).filter(f => f.order_id === orderId);
+  if (response.cursor && fills.length === 0) throw new Error('Fills response is incomplete');
+  let shares = 0, cost = 0, fees = 0;
+  for (const f of fills) {
+    const count = number(f.count_fp), yes = number(f.yes_price_dollars), no = number(f.no_price_dollars), fee = number(f.fee_cost) ?? 0;
+    if (f.ticker !== undefined && f.ticker !== expected.ticker) throw new Error('Fill is for a different market');
+    if (count === null || count <= 0 || yes === null || no === null || Math.abs(yes + no - 1) > 1e-6 || fee < 0) throw new Error('Invalid Kalshi fill record');
+    if (f.outcome_side !== undefined && f.outcome_side !== (expected.side === 'up' ? 'yes' : 'no')) throw new Error('Fill is on the opposite side; manual reconciliation is required');
+    shares += count; cost += count * (expected.side === 'up' ? yes : no); fees += fee;
+  }
+  const averagePrice = shares > 0 ? round(cost / shares) : null;
+  if (averagePrice !== null && averagePrice > expected.limitPrice + 1e-6) throw new Error('Fills cost more than the prepared limit; reconcile manually');
+  return { shares: round(shares), averagePrice, costUsd: round(cost), feesUsd: round(fees) };
+}
+
 /** Current holdings on this side. Positive position_fp is YES inventory, negative is NO. */
 export function normalizePosition(response: KalshiPositionsResponse, ticker: string, side: BinarySide): { shares: number; averagePrice: null } {
   sideCheck(side);
@@ -360,6 +381,15 @@ export class KalshiClient {
   getPositions(ticker: string): Promise<KalshiPositionsResponse> {
     safeTicker(ticker);
     return this.request('GET', '/portfolio/positions', { authenticated: true, query: { ticker, limit: '100' } });
+  }
+  getFills(orderId: string): Promise<KalshiFillsResponse> {
+    safeTicker(orderId);
+    return this.request('GET', '/portfolio/fills', { authenticated: true, query: { order_id: orderId, limit: '200' } });
+  }
+  /** Orders in one market since a Unix-seconds timestamp (Kalshi can't filter by client order ID). */
+  getOrders(ticker: string, sinceSeconds: number): Promise<KalshiOrdersResponse> {
+    safeTicker(ticker);
+    return this.request('GET', '/portfolio/orders', { authenticated: true, query: { ticker, min_ts: String(Math.floor(sinceSeconds)), limit: '200' } });
   }
   getSettlements(ticker: string): Promise<KalshiSettlementsResponse> {
     safeTicker(ticker);

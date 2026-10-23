@@ -101,4 +101,8 @@ export interface BinaryOperator {
   getReceipt(orderId: string, prepared: PreparedBinaryOrder): Promise<BinaryOrderReceipt>;
   /** Shares the account held at settlement per its own records; null until recorded. */
   getSettledHoldings(market: BinaryMarket, side: BinarySide): Promise<number | null>;
+  /** The venue order ID placed with this client order ID, or null if none exists or the venue can't search. */
+  findOrderByClientId(market: BinaryMarket, clientOrderId: string, since: number): Promise<string | null>;
+  /** True when the account has any order or trade in this market since `since`. */
+  hasActivity(market: BinaryMarket, since: number): Promise<boolean>;
 }

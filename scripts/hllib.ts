@@ -37,13 +37,21 @@ export interface TypedData {
 }
 
 async function info<T>(body: unknown): Promise<T> {
-  const res = await fetch(`${API}/info`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`/info ${res.status}`);
-  return (await res.json()) as T;
+  // Reads are safe to repeat: back off on rate limits (a wide hot-wheel scan
+  // makes a candle request per market).
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${API}/info`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 429 && attempt < 5) {
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      continue;
+    }
+    if (!res.ok) throw new Error(`/info ${res.status}`);
+    return (await res.json()) as T;
+  }
 }
 
 export interface AssetInfo {
@@ -88,6 +96,59 @@ export async function universe(): Promise<string[]> {
   return meta.universe.filter((u, i) => !u.isDelisted &&
     Number.isFinite(Number(ctxs[i]?.markPx)) && Number(ctxs[i]?.markPx) > 0 &&
     Number.isInteger(u.maxLeverage) && u.maxLeverage >= 1).map((u) => u.name);
+}
+
+// ---- The hot wheel: rank markets by how hard they move at max leverage. ----
+// A max-leverage position's hourly swing is roughly σ(1h) × maxLeverage, and
+// the venue sets caps so that's similar everywhere — but not identical, and
+// what's live right now (Asia hours, a squeeze, a news day) shifts the ranking.
+export interface HotMarket { coin: string; dex: string; maxLeverage: number; sigma1h: number; swing: number; dayVolumeUsd: number }
+
+/** Never on the wheel: private-company pre-IPO perps the show won't trade. */
+export const HOT_EXCLUDE = new Set(["io:ANTH", "io:OAI"]);
+
+/** Every perp the wallet has a fill in: --fresh keeps repeats off the wheel. */
+export async function tradedCoins(user: string): Promise<Set<string>> {
+  const fills = await info<{ coin: string }[]>({ type: "userFills", user });
+  return new Set(fills.map((f) => f.coin).filter((c) => !c.startsWith("#")));
+}
+
+/** Price move that liquidates an isolated position at max leverage: Hyperliquid
+ * liquidates at maintenance margin, which is half the initial margin. */
+export const liquidationMove = (maxLeverage: number) => 1 / (2 * maxLeverage);
+
+/** Hourly σ from consecutive closes sampled every `minutes`. */
+export function hourlySigma(closes: number[], minutes: number): number {
+  const r: number[] = [];
+  for (let i = 1; i < closes.length; i++) if (closes[i - 1]! > 0 && closes[i]! > 0) r.push(Math.log(closes[i]! / closes[i - 1]!));
+  if (r.length < 8) return 0;
+  const mean = r.reduce((a, b) => a + b, 0) / r.length;
+  const variance = r.reduce((a, b) => a + (b - mean) ** 2, 0) / r.length;
+  return Math.sqrt(variance) * Math.sqrt(60 / minutes);
+}
+
+/** Liquid enough to get in and out on air, ranked by max-leverage swing. */
+export function rankHot(markets: HotMarket[], opts: { top: number; minVolumeUsd: number }): HotMarket[] {
+  return markets.filter((m) => m.dayVolumeUsd >= opts.minVolumeUsd && m.swing > 0 && Number.isFinite(m.swing))
+    .sort((a, b) => b.swing - a.swing || a.coin.localeCompare(b.coin)).slice(0, opts.top);
+}
+
+export async function scanHot(dexes: string[], opts: { top: number; minVolumeUsd: number; hours?: number; exclude?: Set<string> }): Promise<HotMarket[]> {
+  const hours = opts.hours ?? 8, now = Date.now(), out: HotMarket[] = [];
+  for (const dex of dexes) {
+    const [meta, ctxs] = await info<[{ universe: PerpMeta[] }, { markPx: string; dayNtlVlm?: string }[]]>(
+      dex ? { type: "metaAndAssetCtxs", dex } : { type: "metaAndAssetCtxs" });
+    const liquid = meta.universe.map((u, i) => ({ u, vol: Number(ctxs[i]?.dayNtlVlm ?? 0), px: Number(ctxs[i]?.markPx) }))
+      .filter(({ u, vol, px }) => !u.isDelisted && vol >= opts.minVolumeUsd && px > 0 && Number.isInteger(u.maxLeverage) && u.maxLeverage >= 1);
+    for (const { u, vol } of liquid) {
+      if (HOT_EXCLUDE.has(u.name) || opts.exclude?.has(u.name)) continue;
+      await new Promise((r) => setTimeout(r, 60)); // stay under the /info rate limit
+      const candles = await info<{ c: string }[]>({ type: "candleSnapshot", req: { coin: u.name, interval: "15m", startTime: now - hours * 3_600_000, endTime: now } });
+      const sigma1h = hourlySigma(candles.map((c) => Number(c.c)), 15);
+      out.push({ coin: u.name, dex, maxLeverage: u.maxLeverage, sigma1h, swing: sigma1h * u.maxLeverage, dayVolumeUsd: vol });
+    }
+  }
+  return rankHot(out, opts);
 }
 
 // updateLeverage must have actually reached the exchange before sizing an

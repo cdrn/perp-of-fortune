@@ -70,21 +70,32 @@ re-reads the exact prepared contract, rechecks book/holdings/bounds, then submit
 one IOC limit order with a saved client order ID. DOWN orders use each venue's
 YES-price convention internally (Kalshi: an `ask` on the YES book at 1 − the NO
 limit). Only confirmed fills produce a position; partial or zero fills never
-become a full-budget position.
+become a full-budget position. If the IOC finds no liquidity (zero fill), run
+`prepare-binary` again: the dead order is recorded as an earlier attempt.
+On Kalshi the cost basis comes from the order's fills, which price the YES and
+NO legs explicitly; until every fill is visible, cost and P&L are withheld.
 
 Keep `sync-binary --watch` running through account settlement. It authenticates
 only in the operator and writes receipts for the read-only dashboard. Final P&L
 needs the account's own settlement record (Kalshi `/portfolio/settlements`,
 Polymarket US position-resolution activity), not just the public result. If
-holdings differ from this episode's receipt, P&L is withheld. Use a dedicated episode
+holdings differ from this episode's receipt, P&L is withheld; a difference that
+clears on the next poll heals, but one still present at the cutoff stays, and a
+withheld result does not block `plan --replace` once the hour is over. Use a dedicated episode
 position; other trades in the same market break attribution. The intended binary
 strategy holds through resolution; manual early exits are not automatically
 attributed to the episode.
 
+If the venue refuses the order outright (a 4xx such as insufficient balance),
+nothing was submitted: the preparation is cleared, so fix the cause and run
+`prepare-binary` again.
+
 If submission times out or crashes, **do not submit again**. Durable state blocks
-a retry. If an ID was recorded, run `sync-binary`; otherwise find the original
-order at the venue (the saved client order ID identifies it on Kalshi) and use
-`sync-binary --order-id ID`. A missing receipt does not prove failure. A leftover `.lock` after a crash requires checking that no
+a retry. Run `sync-binary`: on Kalshi it finds the order by its saved client order
+ID; on Polymarket US, find it in the app and use `sync-binary --order-id ID`. A
+missing receipt does not prove failure. If nothing landed, wait two minutes and
+run `abandon-binary --confirm EPISODE_ID`; it refuses while the venue has the
+client order ID, the account holds the market, or there's any activity in it. A leftover `.lock` after a crash requires checking that no
 operator is running before removing it; this does not clear an uncertain send.
 
 ### Thematic perp
@@ -150,6 +161,8 @@ HL_NET=mainnet npm run hl -- roll          # the real thing
 npm run hl roll                            # Math.random() spin, curated basket
 npm run hl -- roll --any                   # spin over every listed perp (~180)
 npm run hl -- roll --seed "listener phrase"  # verifiable: keccak256(seed) picks
+npm run hl -- roll --hot [--fresh]          # top 8 live markets by σ(1h) × max leverage, at max leverage;
+                                            # --fresh skips anything this wallet has traded
 ```
 
 The roll only spins over coins actually listed on the current net (it checks),
@@ -175,7 +188,8 @@ npm run hl -- prepare-order --coin SOL --side short --usd 50 --lev 10
 ```
 
 `--usd` is the **margin** committed; notional = usd × lev. The order is a
-marketable IOC (`--slippage` defaults to 0.5%, with a 5% ceiling); it can fill
+marketable IOC (`--slippage` defaults to 0.5% for opens and 5% for closes, with a
+5% ceiling); it can fill
 partially and cancels the unfilled remainder. After `send`, check actual fills and the dash — the position should
 appear within one poll (~5s).
 
@@ -197,7 +211,9 @@ npm run close -- --coin SOL                # or name it (npm run hl prepare-clos
 ```
 
 HIP-3 builder perps are addressed as `dex:COIN` (e.g. `--coin xyz:DRAM`);
-set `UNDERPOD_DEX` to make the tracker watch a builder dex.
+set `UNDERPOD_DEX` to make the tracker watch a builder dex. Without a prefix (or
+`--dex`), close searches the main dex and every dex in `UNDERPOD_DEXES` /
+`UNDERPOD_DEX`; an episode coin without a prefix always closes on the main dex.
 
 Reduce-only IOC for the full size in the opposite direction — it can only
 close, never flip. Reads the position from `UNDERPOD_WALLET` (or `--wallet`),

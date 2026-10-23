@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import type { BinaryMarket, BinaryMarketData, BinaryOperator, BinarySide, BinaryVenueId, PreparedBinaryOrder } from './binary-types.js';
 import { isBinaryVenue } from './binary-types.js';
 import { maximumEntryCost, verifyPreview } from './binary-order.js';
-import { KalshiClient, buildOrderRequest, normalizeOrder as normalizeKalshiOrder, normalizePosition as normalizeKalshiPosition, normalizeSettlement, type KalshiVenue } from './kalshi.js';
+import { KalshiClient, buildOrderRequest, costFromFills, normalizeOrder as normalizeKalshiOrder, normalizePosition as normalizeKalshiPosition, normalizeSettlement, type KalshiVenue } from './kalshi.js';
 import { PolymarketUSClient, buildBuyOrder, normalizeOrder as normalizePMOrder, normalizePosition as normalizePMPosition } from './polymarket-us.js';
 
 export const VENUE_LABELS: Record<BinaryVenueId, string> = { 'polymarket-us': 'Polymarket US', kalshi: 'Kalshi', 'kalshi-demo': 'Kalshi demo' };
@@ -99,6 +99,11 @@ function polymarketOperator(client: PolymarketUSClient): BinaryOperator {
       if (!resolution?.beforePosition) return null;
       return normalizePMPosition({ positions: { [market.slug]: resolution.beforePosition }, eof: true }, market.slug, side).shares;
     },
+    // Polymarket US can't search by client order ID; the operator recovers with --order-id.
+    async findOrderByClientId() { return null; },
+    async hasActivity(market) {
+      return (await client.getActivities(market.slug)).activities.some(a => a.trade);
+    },
   };
 }
 
@@ -128,12 +133,25 @@ function kalshiOperator(client: KalshiClient): BinaryOperator {
       return response.order_id;
     },
     async getReceipt(orderId, prepared) {
-      const receipt = normalizeKalshiOrder(await client.getOrder(orderId), { ticker: prepared.marketSlug, side: prepared.side, shares: prepared.shares, limitPrice: prepared.limitPrice });
+      const expected = { ticker: prepared.marketSlug, side: prepared.side, shares: prepared.shares, limitPrice: prepared.limitPrice };
+      const receipt = normalizeKalshiOrder(await client.getOrder(orderId), expected);
       if (receipt.id !== orderId) throw new Error('Received a different binary order');
-      return receipt;
+      if (receipt.filledShares === 0) return receipt;
+      // Cost basis from the fills, which price each leg explicitly. Until every fill is
+      // visible, withhold cost and fees rather than guess (P&L stays hidden).
+      const fills = costFromFills(await client.getFills(orderId), orderId, expected);
+      if (Math.abs(fills.shares - receipt.filledShares) > 1e-8) return { ...receipt, averagePrice: null, totalCostUsd: null, feesUsd: null };
+      return { ...receipt, averagePrice: fills.averagePrice, totalCostUsd: fills.costUsd, feesUsd: fills.feesUsd };
     },
     async getSettledHoldings(market, side) {
       return normalizeSettlement(await client.getSettlements(market.slug), market.slug, side)?.shares ?? null;
+    },
+    async findOrderByClientId(market, clientOrderId, since) {
+      const orders = (await client.getOrders(market.slug, since / 1000 - 60)).orders ?? [];
+      return orders.find(o => o.client_order_id === clientOrderId && o.ticker === market.slug)?.order_id ?? null;
+    },
+    async hasActivity(market, since) {
+      return ((await client.getOrders(market.slug, since / 1000 - 60)).orders ?? []).length > 0;
     },
   };
 }

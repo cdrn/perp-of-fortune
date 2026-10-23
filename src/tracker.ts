@@ -104,10 +104,19 @@ function derive(
 // The fill that opened the current streak: newest fill where the position size
 // going in was zero. Null when fills don't reach back that far (or the fetch failed).
 function openFillTs(fills: Fill[], coin: string): number | null {
-  const f = fills
-    .filter((f) => f.coin === coin && Number(f.startPosition) === 0 && /open/i.test(f.dir))
+  const mine = fills.filter((f) => f.coin === coin);
+  const lastClose = mine
+    .filter((f) => /close|liquidat/i.test(f.dir))
+    .reduce((t, f) => Math.max(t, f.time), 0);
+  const f = mine
+    .filter((f) => Number(f.startPosition) === 0 && /open/i.test(f.dir))
     .sort((a, b) => b.time - a.time)[0];
-  return f ? f.time : null;
+  // An "open" older than the newest close belongs to a previous streak: this
+  // position's own fill just hasn't propagated to userFills yet (it lags the
+  // exchange response by a few seconds). Report nothing rather than an open
+  // time from two positions ago — callers fall back to now.
+  if (!f || f.time < lastClose) return null;
+  return f.time;
 }
 
 export class Tracker {
@@ -227,8 +236,10 @@ export class Tracker {
       }
     }
 
+    // Pin the episode's coin but not its side: a flipped position is still the
+    // live exposure, and the flip handling below has to see it to close the old row.
     const winner = episode
-      ? candidates.find((c) => c.position.coin === episode.perp.coin && (Number(c.position.szi) < 0 ? "short" : "long") === episode.perp.side)
+      ? candidates.find((c) => c.position.coin === episode.perp.coin)
       : candidates[0];
     if (!winner) {
       // Idle: show the best-funded dex's purse so the header isn't empty.
