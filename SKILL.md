@@ -60,14 +60,16 @@ the venue's credentials in its private environment (`KALSHI_API_KEY_ID` +
 `KALSHI_PRIVATE_KEY_FILE`, or `PM_US_API_KEY` + `PM_US_SECRET_KEY`); the
 dashboard loads public settings only. Do not claim that Hyperliquid's trade-only
 credential scope applies here. Kalshi demo is the only paper mode. Never replay
-an uncertain send; reconcile the recorded order ID (or recover it from the venue
-via the saved client order ID) before proceeding.
+an uncertain send: `sync-binary` finds it by the saved client order ID on Kalshi
+(Polymarket US needs `--order-id`); if nothing landed, `episode abandon-binary
+--confirm EPISODE_ID` after two minutes. A 4xx refusal or a zero-fill IOC clears
+the preparation; prepare again.
 
 Kalshi show-night timing (the default venue):
 1. Before the hour: `episode plan` (strike shown is provisional; contracts open at the top of the hour).
 2. Minute 0–15 of the hour: `episode prepare-binary` → read back contract, strike, shares, max cost on air → `episode send-binary --confirm EPISODE_ID`. After minute 15 the 45-minutes-remaining rule refuses entry; plan the next hour instead.
 3. Leave `episode sync-binary --watch` running until it prints `resolved: true` and a `finalSettlement` exists (Kalshi settles a few minutes after the hour).
-Credentials: `KALSHI_API_KEY_ID` + `KALSHI_PRIVATE_KEY_FILE` in the operator shell only. If `prepare-binary` fails with HTTP 401, the key/venue pair is wrong (demo keys only work with `--venue kalshi-demo`).
+Credentials: `KALSHI_API_KEY_ID` + `KALSHI_PRIVATE_KEY_FILE` in the operator shell, or in `~/.config/perp-of-fortune/operator.env` (0600, read only by `scripts/episode.ts`). If `prepare-binary` fails with HTTP 401, the key/venue pair is wrong (demo keys only work with `--venue kalshi-demo`).
 
 Perp execution: use `hl prepare-leverage --episode`, sign/send, then
 `hl prepare-order --episode`, sign/send, on the saved network. The CLI verifies

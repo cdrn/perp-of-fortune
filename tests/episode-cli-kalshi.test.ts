@@ -37,6 +37,10 @@ interface ExchangeState {
   loseResponse: boolean;
   publicResult: '' | 'yes' | 'no';
   settlementRecord: { yes: number; no: number; result: 'yes' | 'no' } | null;
+  rejectStatus?: number;
+  fillNothing?: boolean;
+  orders?: KalshiOrder[];
+  fills?: Record<string, string>[];
   order?: KalshiOrder;
 }
 
@@ -86,22 +90,36 @@ globalThis.fetch = async (input, init = {}) => {
     }
     if (path === '/portfolio/events/orders' && method === 'POST') {
       if (body.ticker !== ticker || body.time_in_force !== 'immediate_or_cancel' || !body.client_order_id) throw new Error('Invalid order request');
+      if (state.rejectStatus) return new Response('{"error":{"code":"insufficient_balance"}}', {status: state.rejectStatus});
       state.mutationCount++;
-      const count = Number(body.count), yesPrice = Number(body.price);
-      state.order = {order_id: ${JSON.stringify(ORDER_ID)}, client_order_id: body.client_order_id, ticker, book_side: body.side,
-        outcome_side: body.side === 'ask' ? 'no' : 'yes', type: 'limit', status: 'executed', fill_count_fp: count.toFixed(2),
-        initial_count_fp: count.toFixed(2), remaining_count_fp: '0.00', yes_price_dollars: yesPrice.toFixed(4), no_price_dollars: (1 - yesPrice).toFixed(4),
-        taker_fill_cost_dollars: (count * 0.5).toFixed(4), maker_fill_cost_dollars: '0.0000',
-        taker_fees_dollars: (Math.ceil(0.07 * count * 0.25 * 100) / 100).toFixed(4), maker_fees_dollars: '0.0000',
+      const count = Number(body.count), yesPrice = Number(body.price), filled = state.fillNothing ? 0 : count;
+      const orderId = state.mutationCount === 1 ? ${JSON.stringify(ORDER_ID)} : 'kalshi-order-' + state.mutationCount;
+      // The fill trades YES at 0.47 (NO at 0.53). The order-level fill cost is reported as the
+      // YES leg (0.47 per contract), which is NOT what a DOWN buyer paid; fills price both legs.
+      state.order = {order_id: orderId, client_order_id: body.client_order_id, ticker, book_side: body.side,
+        outcome_side: body.side === 'ask' ? 'no' : 'yes', type: 'limit', status: filled ? 'executed' : 'canceled', fill_count_fp: filled.toFixed(2),
+        initial_count_fp: count.toFixed(2), remaining_count_fp: (count - filled).toFixed(2), yes_price_dollars: yesPrice.toFixed(4), no_price_dollars: (1 - yesPrice).toFixed(4),
+        taker_fill_cost_dollars: (filled * 0.47).toFixed(4), maker_fill_cost_dollars: '0.0000',
+        taker_fees_dollars: filled ? (Math.ceil(0.07 * filled * 0.25 * 100) / 100).toFixed(4) : '0.0000', maker_fees_dollars: '0.0000',
         created_time: new Date(Date.now()).toISOString(), last_update_time: new Date(Date.now()).toISOString()};
-      state.holdings = body.side === 'ask' ? -count : count;
+      state.orders = [...(state.orders ?? []), state.order];
+      if (filled) state.fills = [...(state.fills ?? []), {order_id: orderId, ticker, count_fp: filled.toFixed(2), yes_price_dollars: '0.4700', no_price_dollars: '0.5300',
+        outcome_side: body.side === 'ask' ? 'no' : 'yes', fee_cost: state.order.taker_fees_dollars}];
+      state.holdings = body.side === 'ask' ? -filled : filled;
       write(state);
       if (state.loseResponse) throw new Error('Simulated response loss after acceptance');
       return response({order_id: state.order.order_id, fill_count: count.toFixed(2), remaining_count: '0.00', ts_ms: Date.now()});
     }
     if (path.startsWith('/portfolio/orders/') && method === 'GET') {
-      if (state.order && path === '/portfolio/orders/' + state.order.order_id) return response({order: state.order});
+      const found = (state.orders ?? []).find(o => path === '/portfolio/orders/' + o.order_id);
+      if (found) return response({order: found});
       return new Response('{}', {status: 404});
+    }
+    if (path === '/portfolio/orders' && method === 'GET') {
+      return response({orders: (state.orders ?? []).filter(o => o.ticker === url.searchParams.get('ticker')), cursor: ''});
+    }
+    if (path === '/portfolio/fills' && method === 'GET') {
+      return response({fills: (state.fills ?? []).filter(f => f.order_id === url.searchParams.get('order_id')), cursor: ''});
     }
   } else {
     if (authenticated) throw new Error('Public request unexpectedly carried credentials');
@@ -134,6 +152,7 @@ function fixture(t: TestContext) {
     PATH: process.env.PATH,
     NODE_ENV: 'test', HL_NET: 'testnet',
     UNDERPOD_EPISODE: episodePath,
+    XDG_CONFIG_HOME: dir, // never pick up the real operator credentials file
     UNDERPOD_WALLET: '0x0000000000000000000000000000000000000001',
     MOCK_EXCHANGE_FILE: statePath, MOCK_NOW: String(NOW),
     MOCK_KALSHI_PUBLIC_KEY: publicKey.export({ type: 'spki', format: 'pem' }) as string,
@@ -216,8 +235,9 @@ test('Kalshi send submits one signed IOC ask for DOWN, records the paid cost, an
   assert.equal(sent.binary.prepared?.state, 'submitted');
   assert.equal(sent.binary.order?.id, ORDER_ID);
   assert.equal(sent.binary.order?.filledShares, sent.binary.prepared?.shares);
-  assert.equal(sent.binary.order?.averagePrice, 0.5);
-  assert.equal(sent.binary.order?.totalCostUsd, sent.binary.order!.filledShares * 0.5);
+  // Cost basis comes from the fills' NO price, not the order's YES-leg fill cost.
+  assert.equal(sent.binary.order?.averagePrice, 0.53);
+  assert.equal(sent.binary.order?.totalCostUsd, Math.round(sent.binary.order!.filledShares * 0.53 * 1e8) / 1e8);
   assert.ok(sent.binary.order!.feesUsd! > 0);
   assert.ok(sent.binary.order!.totalCostUsd! + sent.binary.order!.feesUsd! <= sent.binary.budgetUsd);
   failure(f.run('send-binary', '--confirm', planned.id), /No fresh, unsubmitted/);
@@ -278,4 +298,83 @@ test('Kalshi refuses to trade when the venue rejects the operator signature', (t
   assert.equal(e.binary.prepared, undefined);
   assert.equal(state.mutationCount, 0);
   assert.ok(!state.requests.some(r => r.method === 'POST' && r.path.startsWith('/trade-api/v2/portfolio')));
+});
+
+test('Kalshi definite rejection (e.g. insufficient balance) clears the preparation so it can be prepared again', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  f.setExchange(state => { state.rejectStatus = 400; });
+  failure(f.run('send-binary', '--confirm', planned.id), /rejected the binary order \(HTTP 400\); nothing was submitted/);
+  const rejected = f.readEpisode();
+  assert.equal(rejected.binary.prepared, undefined);
+  assert.equal(rejected.binary.attempts?.[0]?.outcome, 'rejected');
+  f.setExchange(state => { state.rejectStatus = undefined; });
+  success(f.run('prepare-binary'));
+  success(f.run('send-binary', '--confirm', planned.id));
+  assert.equal(f.readEpisode().binary.order?.id, ORDER_ID);
+});
+
+test('Kalshi ambiguous 5xx stays uncertain; abandon clears it only once nothing landed', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  f.setExchange(state => { state.rejectStatus = 502; });
+  failure(f.run('send-binary', '--confirm', planned.id), /needs reconciliation/);
+  assert.equal(f.readEpisode().binary.prepared?.state, 'uncertain');
+  success(f.run('sync-binary'));
+  assert.equal(f.readEpisode().binary.prepared?.state, 'uncertain');
+  failure(f.run('abandon-binary', '--confirm', planned.id), /Wait two minutes/);
+  f.setClock(NOW + 130_000);
+  f.setExchange(state => { state.holdings = -5; });
+  failure(f.run('abandon-binary', '--confirm', planned.id), /holds this market/);
+  f.setExchange(state => { state.holdings = 0; state.rejectStatus = undefined; });
+  success(f.run('abandon-binary', '--confirm', planned.id));
+  assert.equal(f.readEpisode().binary.attempts?.at(-1)?.outcome, 'abandoned');
+  success(f.run('prepare-binary'));
+});
+
+test('Kalshi lost response is found by client order ID without the operator digging', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  f.setExchange(state => { state.loseResponse = true; });
+  failure(f.run('send-binary', '--confirm', planned.id), /needs reconciliation/);
+  success(f.run('sync-binary'));
+  const found = f.readEpisode();
+  assert.equal(found.binary.prepared?.state, 'submitted');
+  assert.equal(found.binary.order?.id, ORDER_ID);
+  assert.equal(found.binary.order?.averagePrice, 0.53);
+  f.setClock(NOW + 130_000);
+  failure(f.run('abandon-binary', '--confirm', planned.id), /Only an uncertain submission/);
+  assert.equal(f.readExchange().mutationCount, 1);
+});
+
+test('Kalshi zero-fill IOC can be prepared again, and the dead order is never adopted', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  f.setExchange(state => { state.fillNothing = true; });
+  success(f.run('send-binary', '--confirm', planned.id));
+  const missed = f.readEpisode();
+  assert.equal(missed.binary.order?.filledShares, 0);
+  assert.equal(missed.binary.order?.status, 'canceled');
+  success(f.run('prepare-binary'));
+  const retry = f.readEpisode();
+  assert.equal(retry.binary.order, undefined);
+  assert.equal(retry.binary.attempts?.[0]?.orderId, ORDER_ID);
+  f.setExchange(state => { state.fillNothing = false; });
+  success(f.run('send-binary', '--confirm', planned.id));
+  assert.equal(f.readEpisode().binary.order?.id, 'kalshi-order-2');
+  failure(f.run('sync-binary', '--order-id', ORDER_ID), /conflicts|earlier attempt/);
+});
+
+test('Kalshi finished episode with lower-case venue statuses can be replaced', (t) => {
+  const f = fixture(t); const planned = f.plan();
+  success(f.run('prepare-binary'));
+  success(f.run('send-binary', '--confirm', planned.id));
+  const shares = f.readEpisode().binary.order!.filledShares;
+  f.setClock(END + 1_000);
+  f.setExchange(state => { state.holdings = 0; state.publicResult = 'no'; state.settlementRecord = { yes: 0, no: shares, result: 'no' }; });
+  success(f.run('sync-binary'));
+  assert.ok(f.readEpisode().binary.finalSettlement);
+  const replaced = f.run('plan', '--replace', '--theme', 'Next', '--coin', 'SOL', '--side', 'long', '--venue', 'kalshi-demo',
+    '--thesis', 'x', '--binary-side', 'down', '--start', new Date(START).toISOString(), '--json');
+  assert.doesNotMatch(replaced.stderr, /terminal state|account settlement/);
 });

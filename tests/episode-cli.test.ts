@@ -142,6 +142,7 @@ function fixture(t: TestContext) {
     PATH: process.env.PATH,
     NODE_ENV: 'test', HL_NET: 'testnet',
     UNDERPOD_EPISODE: episodePath,
+    XDG_CONFIG_HOME: dir, // never pick up the real operator credentials file
     UNDERPOD_WALLET: '0x0000000000000000000000000000000000000001',
     MOCK_EXCHANGE_FILE: statePath, MOCK_NOW: String(NOW),
     // Ephemeral synthetic material, never a real exchange credential.

@@ -36,6 +36,9 @@ export interface Episode {
       /** Idempotency key sent with the submission; lets an uncertain send be found at the venue. */
       clientOrderId?: string;
     };
+    /** Earlier orders for this episode that ended with no fills or never reached the venue.
+     * Recovery must never adopt one of these as the current order. */
+    attempts?: { orderId?: string; clientOrderId?: string; preparedAt: number; outcome: "unfilled" | "rejected" | "abandoned" }[];
   };
 }
 
