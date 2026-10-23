@@ -38,6 +38,9 @@ export function startServer(
       if (url.pathname === "/api/episode") {
         return json(episodeTracker ? episodeTracker.current : { episode: null, binary: null });
       }
+      if (url.pathname === "/api/episode/points") {
+        return json(episodeTracker ? episodeTracker.points() : []);
+      }
       if (url.pathname === "/api/history") {
         const coin = url.searchParams.get("coin");
         const hours = Number(url.searchParams.get("hours") ?? 72);

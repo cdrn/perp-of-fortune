@@ -13,6 +13,13 @@ async function info<T>(body: unknown, api = HL_API): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Mid price of one main-dex perp (e.g. BTC) — the dashboard's price line for the hourly binary. */
+export async function midPrice(coin: string, api = HL_API): Promise<number | null> {
+  const mids = await info<Record<string, string>>({ type: "allMids" }, api);
+  const n = Number(mids[coin]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export interface RawPosition {
   coin: string;
   szi: string; // signed size: negative = short

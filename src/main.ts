@@ -7,7 +7,7 @@ import { EpisodeTracker } from "./episode-tracker.js";
 const store = new Store(DB_PATH);
 const tracker = new Tracker(store);
 tracker.start();
-const episodeTracker = new EpisodeTracker();
+const episodeTracker = new EpisodeTracker(null, undefined, store);
 episodeTracker.start();
 startServer(tracker, store, undefined, episodeTracker);
 

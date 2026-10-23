@@ -2,6 +2,14 @@ import { POLL_MS } from "./config.js";
 import { readEpisode, type Episode } from "./episode.js";
 import type { BinaryMarketData, BinaryVenueId } from "./binary-types.js";
 import { binaryMarketData, venueLabel } from "./binary-venue.js";
+import { midPrice } from "./hyperliquid.js";
+import type { EpisodePoint } from "./store.js";
+
+export interface EpisodePointStore {
+  insertEpisodePoint(p: EpisodePoint): void;
+  episodePoints(episodeId: string, sinceTs?: number): EpisodePoint[];
+}
+const MAX_POINTS = 2000; // ~2.7h of 5s polls; the episode hour needs 720
 
 export interface EpisodeQuote {
   open: boolean;
@@ -76,8 +84,32 @@ export interface BinaryDataSource {
 export class EpisodeTracker {
   private state: { episode: Episode | null; binary: BinaryView | null; error?: string } = { episode: null, binary: null };
   private readonly sources = new Map<BinaryVenueId, BinaryMarketData>();
+  private pointsFor: string | null = null;
+  private pointBuffer: EpisodePoint[] = [];
   /** Without an explicit source, public market data is resolved from the saved episode's venue. */
-  constructor(private client: BinaryDataSource | null = null, private read = readEpisode) {}
+  constructor(
+    private client: BinaryDataSource | null = null,
+    private read = readEpisode,
+    private pointStore: EpisodePointStore | null = null,
+    private btcPrice: () => Promise<number | null> = () => midPrice("BTC"),
+  ) {}
+
+  /** BTC price and this side's quote across the episode hour, oldest first. */
+  points(): EpisodePoint[] { return this.pointBuffer; }
+
+  private recordPoint(episode: Episode, quote: EpisodeQuote | null, btc: number | null, now: number): void {
+    if (this.pointsFor !== episode.id) {
+      this.pointsFor = episode.id;
+      this.pointBuffer = this.pointStore?.episodePoints(episode.id, episode.startsAt - 10 * 60_000).slice(-MAX_POINTS) ?? [];
+    }
+    // Only the episode hour (plus a short lead-in) belongs on the chart.
+    if (now < episode.startsAt - 10 * 60_000 || now > episode.endsAt + 5 * 60_000) return;
+    if (btc === null && !quote) return;
+    const point: EpisodePoint = { episodeId: episode.id, ts: now, btc, buy: quote?.buyPrice ?? null, sell: quote?.sellPrice ?? null };
+    this.pointBuffer.push(point);
+    if (this.pointBuffer.length > MAX_POINTS) this.pointBuffer.splice(0, this.pointBuffer.length - MAX_POINTS);
+    try { this.pointStore?.insertEpisodePoint(point); } catch { /* chart history is best-effort */ }
+  }
 
   private source(venue: BinaryVenueId): BinaryDataSource {
     if (this.client) return this.client;
@@ -97,11 +129,14 @@ export class EpisodeTracker {
     const now = Date.now();
     try {
       const client = this.source(episode.binary.market.venue);
-      const [quoteResult, settlementResult] = await Promise.allSettled([
+      const wantPrice = now >= episode.startsAt - 10 * 60_000 && now <= episode.endsAt + 5 * 60_000;
+      const [quoteResult, settlementResult, priceResult] = await Promise.allSettled([
         now < episode.startsAt - 90_000 ? Promise.resolve(null) : client.getQuote(episode.binary.market.slug, episode.binary.side),
         now >= episode.endsAt ? client.getSettlement(episode.binary.market.slug) : Promise.resolve(null),
+        wantPrice ? this.btcPrice() : Promise.resolve(null),
       ]);
       const quote = quoteResult.status === "fulfilled" ? quoteResult.value : null;
+      this.recordPoint(episode, quote, priceResult.status === "fulfilled" ? priceResult.value : null, now);
       const settlement = episode.binary.finalSettlement?.yesValue ?? (settlementResult.status === "fulfilled" ? settlementResult.value : null);
       const view = binaryView(episode, quote, settlement, now);
       if (quoteResult.status === "rejected" && settlement === null) view.error = "Binary quotes unavailable; the thematic perp continues independently.";

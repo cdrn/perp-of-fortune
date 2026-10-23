@@ -50,14 +50,14 @@
       }
       @keyframes flicker { 0%,100%{opacity:1} 45%{opacity:.82} 70%{opacity:.94} }
 
-      .wrap { position: relative; z-index: 1; max-width: 1140px; margin: 0 auto; padding: 26px 22px 80px; }
+      .wrap { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; padding: 22px 22px 48px; }
 
-      header { display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
-      .logo { width: 56px; height: 56px; flex: 0 0 auto; border-radius: 50%; background: var(--pitch); border: 2px solid var(--gold); display: grid; place-items: center; box-shadow: 0 0 22px rgba(245,197,24,0.25); }
-      .logo svg { width: 36px; height: 36px; }
-      .titles { flex: 1; }
-      .eyebrow { font-family: "JetBrains Mono", monospace; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--gold-deep); margin-bottom: 4px; }
-      .brand { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(22px, 3.8vw, 36px); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); line-height: 1; }
+      header { display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+      .logo { width: 52px; height: 52px; flex: 0 0 auto; border-radius: 50%; background: var(--pitch); border: 2px solid var(--gold); display: grid; place-items: center; box-shadow: 0 0 22px rgba(245,197,24,0.25); }
+      .logo svg { width: 34px; height: 34px; }
+      .titles { flex: 1; min-width: 0; }
+      .eyebrow { font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--gold-deep); margin-bottom: 4px; }
+      .brand { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(22px, 3.4vw, 34px); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); line-height: 1; }
       .sub { font-family: "EB Garamond", serif; font-style: italic; font-size: 14px; color: var(--mute); margin-top: 4px; }
       .live { text-align: right; font-size: 12px; color: var(--mute); white-space: nowrap; }
       .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--profit); box-shadow: 0 0 10px var(--profit); margin-right: 6px; animation: pulse 2s infinite; }
@@ -65,83 +65,52 @@
       .dot.standby { background: var(--mute); box-shadow: none; animation: none; }
       @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 
-      .roll { margin: 24px 0 6px; font-family: "Cinzel", serif; font-weight: 700; font-size: clamp(18px, 3vw, 30px); letter-spacing: 0.04em; text-transform: uppercase; color: var(--parch); }
-      .roll .lead { color: var(--gold-deep); }
-      .roll .side-long { color: var(--profit); }
-      .roll .side-short { color: var(--blood); }
-      .roll small { font-family: "JetBrains Mono", monospace; font-weight: 400; font-size: 13px; color: var(--mute); letter-spacing: 0; text-transform: none; display: block; margin-top: 6px; }
-
-      .stage { display: flex; flex-direction: column; gap: 22px; margin-top: 16px; }
-
-      .episode { margin-top: 24px; }
-      .episode[hidden] { display: none; }
-      .episode-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 14px; }
-      .episode-heading h1 { font-family: "Cinzel", serif; font-size: clamp(19px, 3vw, 27px); color: var(--gold); overflow-wrap: anywhere; }
-      .episode-heading p { margin-top: 5px; color: var(--mute); font-size: 11px; line-height: 1.7; }
+      /* the episode: one line of theme, then two matching cards */
+      .episode-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin: 22px 0 14px; }
+      .episode-heading h1 { font-family: "Cinzel", serif; font-size: clamp(19px, 2.6vw, 27px); color: var(--gold); overflow-wrap: anywhere; }
       .episode-feed { flex: 0 0 auto; color: var(--mute); font-size: 10px; }
-      .episode-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; }
-      .episode-card { padding: 22px; min-width: 0; }
-      .episode-card h2 { font-family: "Cinzel", serif; color: var(--parch); font-size: clamp(23px, 4vw, 34px); margin: 8px 0; overflow-wrap: anywhere; }
-      .leg-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-      .leg-role { color: var(--gold-deep); font-size: 10px; line-height: 1.5; letter-spacing: .15em; text-transform: uppercase; }
-      .leg-status { color: var(--gold); font-size: 10px; text-align: right; line-height: 1.5; }
-      .leg-description { color: var(--mute); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
-      .leg-description a { color: var(--gold-deep); text-underline-offset: 3px; }
-      .binary-clock { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-top: 18px; border-top: 1px solid var(--line); padding-top: 15px; }
-      .binary-clock strong { font-size: clamp(25px, 4vw, 38px); color: var(--gold); font-weight: 400; }
-      .binary-clock span { color: var(--mute); font-size: 10px; }
-      .binary-window { margin-top: 5px; color: var(--mute); font-size: 10px; line-height: 1.9; }
-      .binary-fortune { margin-top: 18px; }
-      .binary-fortune .value { font-family: "Cinzel", serif; font-size: clamp(22px, 4vw, 38px); font-weight: 700; line-height: 1.25; margin: 6px 0; }
-      .binary-fortune .value.up { color: var(--profit); }
-      .binary-fortune .value.down { color: var(--blood); }
-      .binary-metrics, .perp-plan { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
-      .binary-metrics dt, .perp-plan dt { color: var(--mute); font-size: 10px; line-height: 1.6; }
-      .binary-metrics dd, .perp-plan dd { color: var(--parch); font-size: 15px; margin-top: 4px; overflow-wrap: anywhere; }
-      .leg-note { font-size: 10px; line-height: 1.8; color: var(--mute); margin-top: 16px; }
-      .leg-note.warning { color: var(--ember); }
-      .perp-thesis { font-family: "EB Garamond", serif; font-size: 19px; line-height: 1.55; margin-top: 20px; overflow-wrap: anywhere; }
-      .leg-divider { margin-top: 24px; padding-top: 19px; border-top: 1px solid var(--line); color: var(--gold-deep); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
-      @media (max-width: 640px) {
-        .wrap { padding: 20px 14px 48px; }
-        header { gap: 10px; flex-wrap: wrap; }
-        header .live { width: 100%; text-align: left; font-size: 10px; margin-top: 4px; }
-        .logo { width: 44px; height: 44px; }
-        .logo svg { width: 29px; }
-        .episode-heading { flex-direction: column; gap: 7px; }
-        .episode-grid { grid-template-columns: minmax(0, 1fr); }
-        .episode-card { padding: 18px; }
-        .chartcard { padding: 20px 16px; }
-        .stat { padding: 13px; }
-        .stat .v { font-size: 23px; }
-      }
+      .duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+      body.replay .duo { grid-template-columns: minmax(0, 1fr); }
+      body.replay #binary-card, body.replay .episode-heading { display: none; }
 
       .card { position: relative; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(180deg, rgba(245,197,24,0.05), rgba(4,4,3,0.5)); overflow: hidden; }
-      .chartcard { padding: 24px 24px 20px; }
-      .pnlrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
-      .pnllabel { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 12px; text-transform: uppercase; letter-spacing: 0.22em; }
-      .pnl { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(44px, 8vw, 92px); line-height: 0.95; margin-top: 8px; transition: color .4s; }
+      .leg { padding: 22px 22px 18px; min-width: 0; display: flex; flex-direction: column; }
+      .leg-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+      .leg-role { color: var(--gold-deep); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
+      .leg-status { color: var(--gold); font-size: 10px; text-align: right; }
+      .leg h2 { font-family: "Cinzel", serif; font-weight: 700; color: var(--parch); font-size: clamp(24px, 3vw, 36px); margin: 8px 0 2px; text-transform: uppercase; letter-spacing: 0.04em; overflow-wrap: anywhere; }
+      .leg h2 .side-long, .leg h2 .side-up { color: var(--profit); }
+      .leg h2 .side-short, .leg h2 .side-down { color: var(--blood); }
+      .leg-sub { font-family: "EB Garamond", serif; font-style: italic; font-size: 16px; line-height: 1.45; color: var(--mute); min-height: 1.45em; overflow-wrap: anywhere; }
+      .leg-sub a { color: var(--gold-deep); text-underline-offset: 3px; }
+
+      .bigrow { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; margin-top: 18px; }
+      .pnllabel { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 11px; text-transform: uppercase; letter-spacing: 0.22em; }
+      .pnl { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(38px, 5.2vw, 76px); line-height: 0.95; margin-top: 6px; transition: color .4s; color: var(--parch); }
       .pnl.up { color: var(--profit); text-shadow: 0 0 30px rgba(116,230,160,0.35); }
       .pnl.down { color: var(--blood); text-shadow: 0 0 30px rgba(226,56,76,0.4); }
-      .roi { font-size: 17px; margin-top: 4px; }
-      .depthread { text-align: right; }
-      .depthread b { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(30px, 5vw, 46px); line-height: 1; transition: color .4s; }
-      .depthread .depthsub { font-size: 11px; color: var(--mute); margin-top: 4px; }
-      /* the chart + the ship riding its live end, sinking toward the liquidation band */
-      .chartwrap { position: relative; margin-top: 20px; }
-      .spark { width: 100%; height: 260px; display: block; }
-      .ship { position: absolute; left: 0; top: 0; font-size: 32px; transform: translate(-50%, -56%); transition: left .9s linear, top 1.2s cubic-bezier(.4,0,.2,1); z-index: 3; pointer-events: none; filter: drop-shadow(0 3px 6px rgba(0,0,0,.7)); }
-      .shipprice { position: absolute; left: 0; top: 0; transform: translate(-50%, -210%); font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: var(--parch); background: rgba(4,4,3,0.72); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; white-space: nowrap; z-index: 3; pointer-events: none; transition: left .9s linear, top 1.2s cubic-bezier(.4,0,.2,1); }
+      .pnl.idle { font-size: clamp(22px, 2.6vw, 34px); color: var(--mute); font-weight: 700; margin-top: 10px; }
+      .roi { font-size: 13px; margin-top: 6px; color: var(--mute); min-height: 1.2em; }
+      .depthread { text-align: right; flex: 0 0 auto; }
+      .depthread b { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(26px, 3.4vw, 44px); line-height: 1; transition: color .4s; color: var(--gold); }
+      .depthread .depthsub { font-size: 10px; color: var(--mute); margin-top: 4px; }
 
-      .grid3 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
-      @media (max-width: 820px) { .grid3 { grid-template-columns: repeat(2,1fr); } }
-      .stat { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: rgba(245,197,24,0.03); }
-      .stat .k { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; }
-      .stat .v { font-family: "Cinzel", serif; font-weight: 700; font-size: 28px; margin-top: 8px; color: var(--parch); }
+      /* the chart + the marker riding its live end */
+      .chartwrap { position: relative; margin-top: 16px; }
+      .spark { width: 100%; height: 240px; display: block; }
+      .ship { position: absolute; left: 0; top: 0; font-size: 30px; transform: translate(-50%, -56%); transition: left .9s linear, top 1.2s cubic-bezier(.4,0,.2,1); z-index: 3; pointer-events: none; filter: drop-shadow(0 3px 6px rgba(0,0,0,.7)); }
+      .shipprice { position: absolute; left: 0; top: 0; transform: translate(-50%, -210%); font-size: 11px; font-weight: 700; color: var(--parch); background: rgba(4,4,3,0.72); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; white-space: nowrap; z-index: 3; pointer-events: none; transition: left .9s linear, top 1.2s cubic-bezier(.4,0,.2,1); }
+
+      .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+      .stat { border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; background: rgba(245,197,24,0.03); min-width: 0; }
+      .stat .k { font-family: "Cinzel", serif; color: var(--gold-deep); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; }
+      .stat .v { font-family: "Cinzel", serif; font-weight: 700; font-size: clamp(18px, 1.9vw, 25px); margin-top: 6px; color: var(--parch); overflow-wrap: anywhere; }
       .stat .v.warn { color: var(--gold); }
       .stat .v.bleed { color: var(--blood); }
       .stat .v.profit { color: var(--profit); }
-      .stat .sub { color: var(--mute); font-size: 11px; margin-top: 3px; }
+      .stat .sub { color: var(--mute); font-size: 10px; margin-top: 3px; }
+      .leg-note { font-size: 10px; line-height: 1.7; color: var(--mute); margin-top: 12px; }
+      .leg-note.warning { color: var(--ember); }
 
       /* end-card shown when a replay finishes — the run's epitaph */
       .verdict { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(4,4,3,0.62); backdrop-filter: blur(2px); z-index: 5; animation: vfade .6s ease; }
@@ -151,13 +120,25 @@
       .verdict .vpnl { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(32px, 6vw, 64px); margin-top: 6px; }
       .verdict .vsub { font-size: 12px; color: var(--mute); margin-top: 12px; }
 
-      .empty { text-align: center; padding: 76px 20px; grid-column: 1 / -1; }
-      .empty .big { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(28px, 5vw, 44px); color: var(--gold); letter-spacing: 0.05em; text-transform: uppercase; }
-      .empty p { font-family: "EB Garamond", serif; font-style: italic; font-size: 17px; color: var(--mute); margin-top: 12px; max-width: 520px; margin-left: auto; margin-right: auto; }
+      .empty { text-align: center; padding: 60px 16px; }
+      .empty .big { font-family: "Cinzel", serif; font-weight: 900; font-size: clamp(22px, 3vw, 34px); color: var(--gold); letter-spacing: 0.05em; text-transform: uppercase; }
+      .empty p { font-family: "EB Garamond", serif; font-style: italic; font-size: 16px; color: var(--mute); margin-top: 10px; max-width: 420px; margin-left: auto; margin-right: auto; }
 
-      footer { margin-top: 42px; color: var(--mute); font-size: 12px; border-top: 1px solid var(--line); padding-top: 16px; line-height: 1.75; }
+      footer { margin-top: 28px; color: var(--mute); font-size: 12px; border-top: 1px solid var(--line); padding-top: 14px; line-height: 1.7; }
       footer b { color: var(--gold-deep); font-family: "Cinzel", serif; font-weight: 700; }
       .fable { font-family: "EB Garamond", serif; font-style: italic; color: var(--gold-deep); }
+
+      @media (max-width: 860px) {
+        .wrap { padding: 18px 14px 40px; }
+        header { gap: 10px; flex-wrap: wrap; }
+        header .live { width: 100%; text-align: left; font-size: 10px; margin-top: 4px; }
+        .logo { width: 44px; height: 44px; }
+        .logo svg { width: 29px; }
+        .episode-heading { flex-direction: column; gap: 6px; }
+        .duo { grid-template-columns: minmax(0, 1fr); }
+        .leg { padding: 18px 16px 16px; }
+        .spark { height: 200px; }
+      }
     </style>
   </head>
   <body>
@@ -179,77 +160,57 @@
         <div class="titles">
           <div class="eyebrow">Permanent Underpod presents</div>
           <div class="brand">Perp of Fortune</div>
-          <div class="sub">one Bitcoin binary · one thematic perp · two fates</div>
+          <div class="sub">one Bitcoin coin flip · one thematic perp · two fates</div>
         </div>
         <div class="live">
           <span id="livedot" class="dot"></span><span id="livetxt">lighting the candles…</span>
         </div>
       </header>
 
-      <section id="episode" class="episode" aria-label="Paired episode">
+      <section id="episode" aria-label="Paired episode">
         <div class="episode-heading">
-          <div>
-            <h1 id="episode-theme">Two wagers. One episode.</h1>
-            <p id="episode-description">Preparing the episode: an hourly Bitcoin binary and a perp tied to the show's theme.</p>
-          </div>
+          <h1 id="episode-theme">Two wagers. One episode.</h1>
           <span id="episode-feed" class="episode-feed">Finding the episode…</span>
         </div>
-        <div class="episode-grid">
-          <article class="card episode-card" aria-labelledby="binary-title">
-            <div class="leg-heading"><span class="leg-role">01 · The hourly binary</span><span id="binary-status" class="leg-status">Awaiting selection</span></div>
-            <h2 id="binary-title">Bitcoin · UP or DOWN</h2>
-            <p class="leg-description"><span id="binary-market">An hourly Bitcoin binary: Kalshi's above/below strike or Polymarket US's up/down market.</span> <a id="binary-market-link" target="_blank" rel="noopener noreferrer" hidden>Market rules ↗</a></p>
-            <div class="binary-clock"><strong id="binary-countdown">—</strong><span id="binary-clock-label">until the market cutoff</span></div>
-            <p id="binary-window" class="binary-window">The market window and settlement time will appear here.</p>
-            <div class="binary-fortune">
-              <div id="binary-pnl-label" class="leg-role">Position</div>
-              <div id="binary-pnl" class="value">Awaiting execution</div>
-              <p id="binary-roi" class="leg-description">No filled position to value yet.</p>
+        <div class="duo">
+          <article class="card leg" id="binary-card" aria-labelledby="binary-title">
+            <div class="leg-top"><span class="leg-role">01 · The coin flip</span><span id="binary-status" class="leg-status">Awaiting selection</span></div>
+            <h2 id="binary-title">Bitcoin · <span class="side-up">UP</span> or <span class="side-down">DOWN</span></h2>
+            <p id="binary-market" class="leg-sub">Will Bitcoin finish the hour above the line?</p>
+            <div class="bigrow">
+              <div>
+                <div id="binary-pnl-label" class="pnllabel">The flip</div>
+                <div id="binary-pnl" class="pnl idle">Not yet placed</div>
+                <div id="binary-roi" class="roi"></div>
+              </div>
+              <div class="depthread"><b id="binary-countdown">—</b><div id="binary-clock-label" class="depthsub">until the bell</div></div>
             </div>
-            <dl class="binary-metrics">
-              <div><dt>Buy / share</dt><dd id="binary-buy">—</dd></div>
-              <div><dt>Sell / share</dt><dd id="binary-sell">—</dd></div>
-              <div><dt>Budget cap</dt><dd id="binary-budget">—</dd></div>
-              <div><dt>Buy limit / share</dt><dd id="binary-limit">—</dd></div>
-              <div><dt>Filled shares</dt><dd id="binary-shares">—</dd></div>
-              <div><dt>Average fill / share</dt><dd id="binary-average">—</dd></div>
-              <div><dt>Entry fees</dt><dd id="binary-fees">—</dd></div>
-              <div><dt>Cost + entry fees</dt><dd id="binary-cost">—</dd></div>
-              <div><dt id="binary-exit-label">Exit value</dt><dd id="binary-exit">—</dd></div>
-              <div><dt id="binary-payout-label">Payout if this side wins</dt><dd id="binary-payout">—</dd></div>
-            </dl>
-            <p id="binary-note" class="leg-note">A selection is a plan. Shares, payout and P&amp;L appear after a confirmed fill.</p>
+            <div class="chartwrap">
+              <svg class="spark" id="binary-spark"></svg>
+              <div class="shipprice" id="coinprice"></div>
+              <div class="ship" id="coin">🪙</div>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="k" id="binary-stake-label">The stake</div><div class="v" id="binary-stake">—</div><div class="sub" id="binary-stake-sub">budget, fees included</div></div>
+              <div class="stat"><div class="k" id="binary-payout-label">Pays if right</div><div class="v profit" id="binary-payout">—</div><div class="sub" id="binary-payout-sub">wrong pays nothing</div></div>
+              <div class="stat"><div class="k">The line</div><div class="v warn" id="binary-strike">—</div><div class="sub" id="binary-strike-sub">price to beat</div></div>
+            </div>
             <p id="binary-error" class="leg-note warning" role="status" hidden></p>
           </article>
-          <article class="card episode-card" aria-labelledby="perp-plan-title">
-            <div class="leg-heading"><span class="leg-role">02 · The thematic perp</span><span class="leg-status">Hyperliquid</span></div>
-            <h2 id="perp-plan-title">The theme's wild card</h2>
-            <p id="perp-plan-description" class="leg-description">A separate perpetual position selected for this episode.</p>
-            <p id="perp-plan-thesis" class="perp-thesis">The show's theme gives this trade its story. Its live position will appear below.</p>
-            <div class="binary-fortune">
-              <div id="perp-live-label" class="leg-role">Live perp fortune</div>
-              <div id="perp-live-pnl" class="value">Awaiting live position</div>
-              <p id="perp-live-roi" class="leg-description">No matching live position is reported yet.</p>
-            </div>
-            <dl class="perp-plan">
-              <div><dt>Selected leverage</dt><dd id="perp-plan-leverage">—</dd></div>
-              <div><dt>Planned margin</dt><dd id="perp-plan-margin">—</dd></div>
-              <div><dt>Live entry price</dt><dd id="perp-live-entry">—</dd></div>
-              <div><dt>Live mark price</dt><dd id="perp-live-mark">—</dd></div>
-            </dl>
-            <p class="leg-note">The selection above is the episode plan. The live Hyperliquid position below confirms what actually filled.</p>
+
+          <article class="card leg chartcard" id="perp-card" aria-labelledby="perp-plan-title">
+            <div class="leg-top"><span class="leg-role">02 · The wild card</span><span id="perp-status" class="leg-status">Hyperliquid</span></div>
+            <h2 id="perp-plan-title">The theme's perp</h2>
+            <p id="perp-plan-thesis" class="leg-sub">A perpetual position chosen for this episode's theme.</p>
+            <div id="stage"></div>
           </article>
         </div>
-        <div class="leg-divider">The perp · live position</div>
       </section>
-      <div id="roll" class="roll"></div>
-      <main id="stage"></main>
 
       <footer>
-        <b>The rite.</b> An hourly Bitcoin binary (Kalshi's above/below strike, or Polymarket US) joins a thematic perp on Hyperliquid.
-        The Hyperliquid trading key is kept by <b>sigil</b> — that agent key may place orders but <b>cannot withdraw</b>.
-        The binary venue uses a separate account and credentials. This board is read-only; it reports each venue's
-        available data independently. <span class="fable">Not advice. Obviously.</span>
+        <b>The rite.</b> The flip rides Bitcoin against a line for one hour; the wild card rides a leveraged perp.
+        <b>sigil</b> holds the trading key — it may place orders but <b>cannot withdraw</b>.
+        <span class="fable">Not advice. Obviously.</span>
       </footer>
     </div>
 
@@ -265,124 +226,162 @@
         if (h > 0) return `${h}h ${m}m`;
         return `${m}m ${s % 60}s`;
       };
-
       const pxFmt = (v) => fmtUsd(v, v < 10 ? 4 : 2);
       const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
       const finite = (n) => typeof n === "number" && Number.isFinite(n);
-      const moneyOrDash = (n) => finite(n) ? fmtUsd(n) : "—";
-      const centsOrDash = (n) => finite(n) ? `${(n * 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}¢` : "—";
-      const episodeTime = (ts) => finite(ts)
-        ? new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })
-        : "not provided";
-      const emptyEpisodeMarkup = $("episode").innerHTML;
+      const signed = (n) => (n >= 0 ? "+$" : "−$") + fmtUsd(Math.abs(n)).slice(1);
+      const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       let episodeData = null, episodeLoading = false, livePerpState = null;
+      let pointCache = [], pointsAt = 0, pointsFor = null;
 
-      function renderPerpSummary() {
-        const selection = episodeData?.episode?.perp, position = livePerpState?.position;
-        const matches = selection && position && position.coin === selection.coin && position.side.toLowerCase() === selection.side;
-        const known = matches && finite(position.unrealizedPnl);
-        const pnl = $("perp-live-pnl");
-        pnl.className = "value" + (known ? position.unrealizedPnl >= 0 ? " up" : " down" : "");
-        pnl.textContent = known ? `${position.unrealizedPnl >= 0 ? "+" : ""}${fmtUsd(position.unrealizedPnl)}` : "Awaiting live position";
-        $("perp-live-label").textContent = livePerpState?.stale && known ? "Last reported perp fortune · stale" : "Live perp fortune";
-        $("perp-live-roi").textContent = known && finite(position.roiPct)
-          ? `${position.roiPct >= 0 ? "+" : ""}${position.roiPct.toFixed(1)}% on the live position's margin`
-          : "No matching live position is reported yet.";
-        $("perp-live-entry").textContent = matches && finite(position.entryPx) ? pxFmt(position.entryPx) : "—";
-        $("perp-live-mark").textContent = matches && finite(position.markPx) ? pxFmt(position.markPx) : "—";
-      }
-
+      // ── The coin flip ───────────────────────────────────────────────────
       function updateBinaryClock() {
         const plan = episodeData?.episode?.binary?.market;
         const binary = episodeData?.binary;
         if (!plan) return;
         const start = binary?.startsAt ?? plan.startsAt, end = binary?.endsAt ?? plan.endsAt;
-        const now = Date.now(), upcoming = finite(start) && start > now;
-        if (binary?.status === "settled") {
-          $("binary-countdown").textContent = "Settled";
-          $("binary-clock-label").textContent = "the final result is in";
-        } else if (finite(end) && end <= now) {
-          $("binary-countdown").textContent = "Closed";
-          $("binary-clock-label").textContent = "market cutoff passed · awaiting settlement";
-        } else {
-          const remaining = Math.max(0, (upcoming ? start : end) - now);
-          $("binary-countdown").textContent = finite(remaining) ? fmtAge(remaining) : "—";
-          $("binary-clock-label").textContent = upcoming ? "until the market window opens" : "until the market cutoff";
+        const now = Date.now();
+        const cd = $("binary-countdown"), label = $("binary-clock-label");
+        if (binary?.status === "settled") { cd.textContent = "Settled"; label.textContent = "the result is in"; }
+        else if (now >= end) { cd.textContent = "Closed"; label.textContent = "awaiting the result"; }
+        else {
+          const upcoming = now < start;
+          cd.textContent = fmtAge(Math.max(0, (upcoming ? start : end) - now));
+          label.textContent = upcoming ? "until the hour begins" : "until the bell";
         }
+        cd.style.color = now >= end ? "var(--parch)" : end - now < 5 * 60_000 ? "var(--ember)" : "var(--gold)";
       }
 
-      function renderEpisode(data) {
-        const hadEpisode = Boolean(episodeData?.episode);
-        episodeData = data;
-        const episode = data?.episode, binary = data?.binary;
-        if (!episode) {
-          if (hadEpisode) $("episode").innerHTML = emptyEpisodeMarkup;
-          $("episode-feed").textContent = "No episode prepared";
-          $("binary-error").hidden = true;
-          return;
-        }
-        const plan = episode.binary;
-        $("episode-theme").textContent = episode.theme || "Two wagers. One episode.";
-        $("episode-description").textContent = `Episode window: ${episodeTime(episode.startsAt)} → ${episodeTime(episode.endsAt)}`;
-        $("episode-feed").textContent = binary?.stale ? "Binary data is stale" : "Paired episode selected";
-        $("binary-title").textContent = `Bitcoin · ${(binary?.side || plan.side).toUpperCase()}`;
-        $("binary-market").textContent = (binary?.marketTitle || plan.market.title) + (binary?.venueLabel ? ` · ${binary.venueLabel}` : "");
-        const marketLink = $("binary-market-link");
-        marketLink.hidden = true;
-        marketLink.removeAttribute("href");
+      function renderBinary(episode, binary) {
+        const plan = episode.binary, m = plan.market, side = binary?.side || plan.side;
+        const venue = binary?.venueLabel || "";
+        const strike = m.priceToBeat;
+        $("binary-title").innerHTML = `Bitcoin · <span class="side-${side}">${side.toUpperCase()}</span>`;
+        const what = finite(strike)
+          ? side === "up" ? `Bitcoin must finish the hour above ${fmtUsd(strike, 0)}.` : `Bitcoin must finish the hour below ${fmtUsd(strike, 0)}.`
+          : `Bitcoin must finish the hour ${side === "up" ? "higher" : "lower"} than it started.`;
+        let link = "";
         try {
           const url = new URL(binary?.marketUrl);
-          const venueHosts = ["polymarket.us", "kalshi.com"];
-          if (url.protocol === "https:" && venueHosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))) {
-            marketLink.href = url.href;
-            marketLink.hidden = false;
-          }
+          const hosts = ["polymarket.us", "kalshi.com"];
+          if (url.protocol === "https:" && hosts.some((h) => url.hostname === h || url.hostname.endsWith(`.${h}`))) link = ` <a href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">${esc(venue)} ↗</a>`;
         } catch {}
-        const statuses = { planned: "Selected · awaiting execution", submitted: "Submitted · awaiting fill", live: "Filled position", awaiting_result: "Result pending", settled: "Settled", unavailable: "Data unavailable" };
-        $("binary-status").textContent = statuses[binary?.status] || "Selected · awaiting execution";
-        const settlement = binary?.settlementAt ?? plan.market.settlementAt;
-        $("binary-window").textContent = `Market: ${episodeTime(binary?.startsAt ?? plan.market.startsAt)} → ${episodeTime(binary?.endsAt ?? plan.market.endsAt)}. Settlement: ${finite(settlement) ? episodeTime(settlement) + " (expected)" : "after the cutoff, when the venue confirms the result"}.`;
-        $("binary-buy").textContent = centsOrDash(binary?.quote?.buyPrice);
-        $("binary-sell").textContent = centsOrDash(binary?.quote?.sellPrice);
-        $("binary-budget").textContent = moneyOrDash(plan.budgetUsd);
-        $("binary-limit").textContent = centsOrDash(plan.limitPrice);
+        $("binary-market").innerHTML = esc(what) + (link || (venue ? ` <span>${esc(venue)}</span>` : ""));
+        const statuses = { planned: "Selected · not yet placed", submitted: "Placed · awaiting fill", live: "In play", awaiting_result: "Closed · result pending", settled: "Settled", unavailable: "Data unavailable" };
+        $("binary-status").textContent = statuses[binary?.status] || "Selected · not yet placed";
+
         const filled = finite(binary?.shares) && binary.shares > 0;
         const settled = binary?.status === "settled";
         const pnlKnown = filled && finite(binary.pnlUsd);
         const pnl = $("binary-pnl");
-        pnl.className = "value" + (pnlKnown ? binary.pnlUsd >= 0 ? " up" : " down" : "");
-        pnl.textContent = pnlKnown ? `${binary.pnlUsd >= 0 ? "+" : ""}${fmtUsd(binary.pnlUsd)}`
-          : filled ? "Value unavailable" : binary?.status === "submitted" ? "Awaiting fill" : "Awaiting execution";
-        $("binary-pnl-label").textContent = filled ? settled ? "Final fortune" : "Binary fortune" : "Position";
+        pnl.className = "pnl" + (pnlKnown ? binary.pnlUsd >= 0 ? " up" : " down" : " idle");
+        pnl.textContent = pnlKnown ? signed(binary.pnlUsd) : filled ? "Value unavailable" : binary?.status === "submitted" ? "Awaiting fill" : "Not yet placed";
+        $("binary-pnl-label").textContent = filled ? settled ? "Final fortune" : "The flip, live" : "The flip";
+        const basis = filled && finite(binary.costUsd) && finite(binary.feesUsd) ? binary.costUsd + binary.feesUsd : null;
         $("binary-roi").textContent = pnlKnown && finite(binary.roiPct)
-          ? `${binary.roiPct >= 0 ? "+" : ""}${binary.roiPct.toFixed(1)}% on cost including entry fees`
-          : filled ? "P&L appears when the position can be valued." : "No filled position to value yet.";
-        $("binary-shares").textContent = filled ? binary.shares.toLocaleString("en-US", { maximumFractionDigits: 4 }) : "—";
-        $("binary-average").textContent = filled ? centsOrDash(plan.order?.averagePrice) : "—";
-        $("binary-fees").textContent = filled ? moneyOrDash(binary.feesUsd) : "—";
-        $("binary-cost").textContent = filled && finite(binary.costUsd) && finite(binary.feesUsd)
-          ? fmtUsd(binary.costUsd + binary.feesUsd) : "—";
-        $("binary-exit-label").textContent = settled ? "Settlement value" : "Exit value";
-        $("binary-exit").textContent = filled ? moneyOrDash(binary.exitValueUsd) : "—";
-        $("binary-payout").textContent = filled ? moneyOrDash(binary.winPayoutUsd) : "—";
-        $("binary-payout-label").textContent = settled ? "Contract face value" : "Payout if this side wins";
-        const quoteAge = finite(binary?.quote?.updatedAt) ? ` Quote updated ${fmtAge(Math.max(0, Date.now() - binary.quote.updatedAt))} ago.` : "";
-        const holdingsCheckedAt = plan.finalSettlement?.verifiedAt ?? plan.positionCheckedAt ?? plan.order?.updatedAt;
-        const fillSync = filled && finite(holdingsCheckedAt) ? ` Holdings last checked ${episodeTime(holdingsCheckedAt)}.` : "";
-        $("binary-note").textContent = filled
-          ? settled ? `The venue has confirmed the result. Final P&L includes recorded entry fees.${fillSync}`
-            : `P&L includes entry fees, before exit fees. Exit value requires enough shares at the sell quote; quotes and liquidity can change.${quoteAge}${fillSync}`
-          : `A selection is a plan. Shares, payout and P&L appear after a confirmed fill.${quoteAge}`;
-        const problems = [binary?.stale ? "Showing stale binary data." : "", binary?.error || ""].filter(Boolean);
+          ? `${binary.roiPct >= 0 ? "+" : ""}${binary.roiPct.toFixed(1)}% on ${fmtUsd(basis)} staked`
+          : filled ? "" : `Up to ${fmtUsd(plan.budgetUsd, 0)} on the line. Right roughly doubles it; wrong loses it.`;
+
+        $("binary-stake-label").textContent = filled ? "The stake" : "The budget";
+        $("binary-stake").textContent = filled ? (basis !== null ? fmtUsd(basis) : "—") : fmtUsd(plan.budgetUsd, 0);
+        $("binary-stake-sub").textContent = filled ? `${binary.shares.toLocaleString("en-US", { maximumFractionDigits: 2 })} contracts, fees included` : "fees included";
+        $("binary-payout").textContent = filled ? fmtUsd(binary.winPayoutUsd) : "—";
+        $("binary-payout-label").textContent = settled ? (binary.settlementValue === 1 ? "It paid" : "It paid") : "Pays if right";
+        $("binary-payout").className = "v " + (settled ? (finite(binary.exitValueUsd) && binary.exitValueUsd > 0 ? "profit" : "bleed") : "profit");
+        if (settled) $("binary-payout").textContent = finite(binary.exitValueUsd) ? fmtUsd(binary.exitValueUsd) : "—";
+        $("binary-payout-sub").textContent = settled ? (binary.settlementValue === 1 ? `${side.toUpperCase()} was right` : `${side.toUpperCase()} was wrong`) : "wrong pays nothing";
+        $("binary-strike").textContent = finite(strike) ? fmtUsd(strike, 0) : "—";
+        $("binary-strike-sub").textContent = finite(strike) ? `${side.toUpperCase()} wins ${side === "up" ? "above" : "below"} it` : "set when the hour opens";
+
+        const problems = [binary?.stale ? "Showing stale flip data." : "", binary?.error || ""].filter(Boolean);
         $("binary-error").hidden = !problems.length;
         $("binary-error").textContent = problems.join(" ");
-        $("perp-plan-title").textContent = `${episode.perp.side.toUpperCase()} ${episode.perp.coin}`;
-        $("perp-plan-description").textContent = "Selected for this episode's theme · Hyperliquid";
-        $("perp-plan-thesis").textContent = episode.perp.thesis;
-        $("perp-plan-leverage").textContent = `${episode.perp.leverage}×`;
-        $("perp-plan-margin").textContent = moneyOrDash(episode.perp.marginUsd);
-        renderPerpSummary();
         updateBinaryClock();
+      }
+
+      async function refreshPoints(episode) {
+        const now = Date.now();
+        if (pointsFor !== episode.id || now - pointsAt > 10_000) {
+          try {
+            const res = await fetch("/api/episode/points");
+            if (res.ok) { pointCache = await res.json(); pointsFor = episode.id; pointsAt = now; }
+          } catch {}
+        }
+        return pointCache.filter((p) => finite(p.btc) && p.btc > 0).map((p) => ({ ts: p.ts, mark: p.btc }));
+      }
+
+      // Bitcoin against the line, across the hour. The losing side of the line
+      // is the abyss; the coin rides the live end. The twin of the perp chart.
+      function strikechart(svg, pts, strike, side, startsAt, endsAt, coinEl, priceEl, settledValue) {
+        const W = svg.clientWidth || 600, H = 240, padL = 2, padR = 30, padT = 14, padB = 18;
+        const x0 = Math.min(startsAt, pts[0]?.ts ?? startsAt), x1 = endsAt;
+        const vals = pts.map((p) => p.mark);
+        if (finite(strike)) vals.push(strike);
+        if (!vals.length) { svg.innerHTML = ""; return; }
+        let lo = Math.min(...vals), hi = Math.max(...vals);
+        const padY = Math.max((hi - lo) * 0.25, hi * 0.0015, 1);
+        lo -= padY; hi += padY;
+        const sx = (x) => padL + ((x - x0) / Math.max(1, x1 - x0)) * (W - padL - padR);
+        const sy = (v) => padT + (1 - (v - lo) / Math.max(1e-9, hi - lo)) * (H - padT - padB);
+        const last = pts[pts.length - 1];
+        const winning = settledValue !== null && settledValue !== undefined
+          ? (side === "up") === (settledValue === 1)
+          : last && finite(strike) ? (side === "up" ? last.mark > strike : last.mark < strike) : null;
+        const col = winning === null ? "#f5c518" : winning ? "#74e6a0" : "#e2384c";
+        let layers = "";
+        if (finite(strike)) {
+          const y = sy(strike);
+          const zoneY = side === "up" ? y : 0, zoneH = Math.max(0, side === "up" ? H - y : y);
+          layers +=
+            `<rect x="0" y="${zoneY.toFixed(1)}" width="${W}" height="${zoneH.toFixed(1)}" fill="rgba(226,56,76,0.12)"/>
+             <line x1="0" y1="${y.toFixed(1)}" x2="${W}" y2="${y.toFixed(1)}" stroke="#f5c518" stroke-width="1.5" stroke-dasharray="5 3"/>
+             <text x="7" y="${(y + (side === "up" ? -7 : 14)).toFixed(1)}" fill="#f5c518" font-size="10" font-family="JetBrains Mono" letter-spacing="0.5">THE LINE ${esc(fmtUsd(strike, 0))} · ${side.toUpperCase()} WINS ${side === "up" ? "ABOVE" : "BELOW"}</text>`;
+        }
+        const startX = sx(startsAt);
+        layers += `<line x1="${startX.toFixed(1)}" y1="0" x2="${startX.toFixed(1)}" y2="${H}" stroke="rgba(245,197,24,0.25)" stroke-width="1"/>
+          <text x="${(startX + 5).toFixed(1)}" y="${H - 5}" fill="#8a7c5e" font-size="9" font-family="JetBrains Mono">${esc(clock(startsAt))}</text>
+          <text x="${(W - padR - 4).toFixed(1)}" y="${H - 5}" fill="#8a7c5e" font-size="9" font-family="JetBrains Mono" text-anchor="end">bell ${esc(clock(endsAt))}</text>`;
+        const d = pts.map((p, i) => `${i ? "L" : "M"}${sx(p.ts).toFixed(1)} ${sy(p.mark).toFixed(1)}`).join(" ");
+        const areaD = pts.length > 1 ? `${d} L ${sx(last.ts).toFixed(1)} ${(H - padB).toFixed(1)} L ${sx(pts[0].ts).toFixed(1)} ${(H - padB).toFixed(1)} Z` : "";
+        svg.innerHTML =
+          `<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+             <stop offset="0" stop-color="${col}" stop-opacity="0.26"/>
+             <stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+           ${layers}
+           ${areaD ? `<path d="${areaD}" fill="url(#bg)"/>` : ""}
+           ${d ? `<path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>` : ""}`;
+        if (!last) { coinEl.style.display = "none"; priceEl.style.display = "none"; return; }
+        coinEl.style.display = ""; priceEl.style.display = "";
+        const lx = sx(last.ts).toFixed(1) + "px", ly = sy(last.mark).toFixed(1) + "px";
+        const first = !coinEl.style.left;
+        if (first) for (const el of [coinEl, priceEl]) el.style.transition = "none";
+        coinEl.style.left = lx; coinEl.style.top = ly;
+        coinEl.textContent = settledValue === null || settledValue === undefined ? "🪙" : winning ? "🏆" : "⚰️";
+        priceEl.style.left = lx; priceEl.style.top = ly;
+        priceEl.textContent = fmtUsd(last.mark, 0);
+        if (first) { void coinEl.offsetWidth; for (const el of [coinEl, priceEl]) el.style.transition = ""; }
+      }
+
+      async function renderEpisode(data) {
+        episodeData = data;
+        const episode = data?.episode, binary = data?.binary;
+        if (!episode) {
+          $("episode-theme").textContent = "Two wagers. One episode.";
+          $("episode-feed").textContent = "No episode prepared";
+          $("binary-error").hidden = true;
+          return;
+        }
+        $("episode-theme").textContent = episode.theme || "Two wagers. One episode.";
+        $("episode-feed").textContent = binary?.stale ? "Flip data is stale" : `Episode hour ${clock(episode.startsAt)} – ${clock(episode.endsAt)}`;
+        renderBinary(episode, binary);
+        const m = episode.binary.market;
+        $("perp-plan-title").innerHTML = `<span class="side-${episode.perp.side}">${esc(episode.perp.side)}</span> ${esc(episode.perp.coin)} · ${esc(episode.perp.leverage)}×`;
+        $("perp-plan-thesis").textContent = episode.perp.thesis;
+        renderPerpStatus();
+        try {
+          const pts = await refreshPoints(episode);
+          strikechart($("binary-spark"), pts, m.priceToBeat, binary?.side || episode.binary.side, m.startsAt, m.endsAt, $("coin"), $("coinprice"), binary?.settlementValue ?? null);
+        } catch {}
       }
 
       async function tickEpisode() {
@@ -393,17 +392,26 @@
         try {
           const response = await fetch("/api/episode", { signal: controller.signal });
           if (!response.ok) throw new Error("Episode data is temporarily unavailable.");
-          renderEpisode(await response.json());
+          await renderEpisode(await response.json());
         } catch {
           $("episode-feed").textContent = "Episode feed unavailable";
           $("binary-error").hidden = false;
           $("binary-error").textContent = episodeData?.episode
-            ? "Episode updates paused. Displayed binary data may be stale. Reconnecting…"
+            ? "Episode updates paused. Flip data may be stale. Reconnecting…"
             : "Episode data is temporarily unavailable. Reconnecting…";
         } finally {
           clearTimeout(timeout);
           episodeLoading = false;
         }
+      }
+
+      // ── The wild card ───────────────────────────────────────────────────
+      function renderPerpStatus() {
+        const selection = episodeData?.episode?.perp, position = livePerpState?.position;
+        const matches = selection && position && position.coin === selection.coin && position.side.toLowerCase() === selection.side;
+        $("perp-status").textContent = !livePerpState?.wallet ? "Hyperliquid · standing by"
+          : matches ? (livePerpState.stale ? "Hyperliquid · stale" : "In play · Hyperliquid")
+          : position ? "Hyperliquid · another position is open" : "Hyperliquid · not yet placed";
       }
 
       // Mark-price chart with the entry line and the liquidation "bar" — a red
@@ -419,7 +427,7 @@
           pts = out;
         }
         // padR leaves room for the ship to ride the live end without clipping
-        const W = svg.clientWidth || 600, H = 260, padL = 2, padR = 30, padT = 14, padB = 14;
+        const W = svg.clientWidth || 600, H = 240, padL = 2, padR = 30, padT = 14, padB = 14;
         const xs = pts.map((p) => p.ts), ms = pts.map((p) => p.mark);
         const x0 = Math.min(...xs), x1 = Math.max(...xs);
         // y-range spans the price path, the entry, and the liq line so the
@@ -521,19 +529,17 @@
       function renderStandby() {
         if (mode === "standby") return;
         mode = "standby"; builtCoin = null;
-        $("roll").innerHTML = "";
         $("stage").innerHTML =
           `<div class="empty"><div class="big">The dice are uncast</div>
-           <p>The thematic perp is awaiting execution. Once its Hyperliquid wallet is connected and the position fills, its live voyage appears here.</p></div>`;
+           <p>Once the wallet is connected and the position fills, its voyage appears here.</p></div>`;
       }
 
       function renderEmpty(state) {
         if (mode !== "empty") {
           mode = "empty"; builtCoin = null;
-          $("roll").innerHTML = "";
           $("stage").innerHTML =
             `<div class="empty"><div class="big">No position open</div>
-             <p>The thematic perp has not filled yet — or its voyage has already ended. The episode selection above remains a plan until a position opens.</p>
+             <p>The wild card has not filled yet — or its voyage has already ended.</p>
              <p style="font-style:normal;font-family:'JetBrains Mono',monospace;font-size:13px">The purse: <b id="emptypurse" style="color:var(--gold)"></b></p></div>`;
         }
         $("emptypurse").textContent = fmtUsd(state.accountValue || 0);
@@ -541,29 +547,26 @@
 
       function buildPosition() {
         $("stage").innerHTML = `
-          <div class="card chartcard">
-            <div class="pnlrow">
-              <div>
-                <div class="pnllabel">Unrealized fortune</div>
-                <div class="pnl" id="pnl">—</div>
-                <div class="roi" id="roi"></div>
-              </div>
-              <div class="depthread">
-                <b id="drownbig">—</b>
-                <div class="depthsub">sunk · <span id="distliq"></span></div>
-              </div>
+          <div class="bigrow">
+            <div>
+              <div class="pnllabel">Unrealized fortune</div>
+              <div class="pnl" id="pnl">—</div>
+              <div class="roi" id="roi"></div>
             </div>
-            <div class="chartwrap">
-              <svg class="spark" id="spark"></svg>
-              <div class="shipprice" id="shipprice"></div>
-              <div class="ship" id="ship">🚢</div>
+            <div class="depthread">
+              <b id="drownbig">—</b>
+              <div class="depthsub">sunk · <span id="distliq"></span></div>
             </div>
           </div>
-          <div class="grid3">
-            <div class="stat"><div class="k">Time afloat</div><div class="v" id="s_age"></div><div class="sub">since the roll</div></div>
+          <div class="chartwrap">
+            <svg class="spark" id="spark"></svg>
+            <div class="shipprice" id="shipprice"></div>
+            <div class="ship" id="ship">🚢</div>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="k">The wager</div><div class="v" id="s_notional"></div><div class="sub" id="s_exsub"></div></div>
             <div class="stat"><div class="k">The grave</div><div class="v warn" id="s_liq"></div><div class="sub">liquidation price</div></div>
             <div class="stat"><div class="k" id="s_fundk"></div><div class="v" id="s_fund"></div><div class="sub" id="s_fundsub"></div></div>
-            <div class="stat"><div class="k">The wager</div><div class="v" id="s_notional"></div><div class="sub" id="s_exsub"></div></div>
           </div>`;
       }
 
@@ -575,11 +578,10 @@
         if (mode !== "position" || builtCoin !== p.coin) {
           mode = "position"; builtCoin = p.coin; buildPosition();
         }
-
-        const sideCls = p.side === "LONG" ? "side-long" : "side-short";
-        $("roll").innerHTML =
-          `<span class="lead">The roll →</span> <span class="${sideCls}">${esc(p.side)} ${esc(p.coin)}</span> · ${esc(p.leverage)}×` +
-          `<small>entry ${px(p.entryPx)} · mark ${px(p.markPx)} · size ${p.size.toLocaleString()} · notional ${fmtUsd(p.notional, 0)}</small>`;
+        if (!episodeData?.episode || REPLAY) {
+          $("perp-plan-title").innerHTML = `<span class="${p.side === "LONG" ? "side-long" : "side-short"}">${esc(p.side)}</span> ${esc(p.coin)} · ${esc(p.leverage)}×`;
+          $("perp-plan-thesis").textContent = `entry ${px(p.entryPx)} · afloat ${fmtAge(p.ageMs)}`;
+        }
 
         const drown = Math.round(p.drownPct);
         const dead = drown >= 96;
@@ -587,12 +589,11 @@
 
         const pnl = $("pnl");
         pnl.className = "pnl " + (pnlUp ? "up" : "down");
-        pnl.textContent = (pnlUp ? "+$" : "−$") + fmtUsd(Math.abs(p.unrealizedPnl)).slice(1);
+        pnl.textContent = signed(p.unrealizedPnl);
         const roi = $("roi");
         roi.style.color = pnlUp ? "var(--profit)" : "var(--blood)";
-        roi.textContent = `${pnlUp ? "+" : ""}${p.roiPct.toFixed(1)}% upon the margin staked`;
+        roi.textContent = `${pnlUp ? "+" : ""}${p.roiPct.toFixed(1)}% on ${fmtUsd(p.marginUsed, 0)} margin · afloat ${fmtAge(p.ageMs)}`;
 
-        // depth readout (the gauge collapsed into one number; the boat lives on the chart now)
         const drownBig = $("drownbig");
         drownBig.textContent = `${drown}%`;
         drownBig.style.color = drown >= 66 ? "var(--blood)" : drown >= 33 ? "var(--ember)" : "var(--gold)";
@@ -600,15 +601,14 @@
           ? "a fable that ended too soon"
           : (p.distToLiqPct != null ? `${p.distToLiqPct.toFixed(1)}% from the grave` : "—");
 
-        $("s_age").textContent = fmtAge(p.ageMs);
         $("s_liq").textContent = p.liqPx ? px(p.liqPx) : "—";
         $("s_fundk").textContent = `The ${fundBleed ? "bleed" : "tithe"} /hr`;
         const fund = $("s_fund");
         fund.className = "v " + (fundBleed ? "bleed" : "profit");
         fund.textContent = `${fundBleed ? "−" : "+"}${fmtUsd(Math.abs(p.fundingHourly)).slice(1)}`;
-        $("s_fundsub").textContent = `funding, paid so far ${p.fundingPaid >= 0 ? "+" : "−"}${fmtUsd(Math.abs(p.fundingPaid)).slice(1)}`;
+        $("s_fundsub").textContent = `funding so far ${p.fundingPaid >= 0 ? "+" : "−"}${fmtUsd(Math.abs(p.fundingPaid)).slice(1)}`;
         $("s_notional").textContent = fmtUsd(p.notional, 0);
-        $("s_exsub").textContent = `margin ${fmtUsd(p.marginUsed, 0)} · purse ${fmtUsd(state.accountValue, 0)}`;
+        $("s_exsub").textContent = `${esc(p.leverage)}× on ${fmtUsd(p.marginUsed, 0)} · purse ${fmtUsd(state.accountValue, 0)}`;
 
         // chart: persisted <svg>, atomic redraw; refetch the 72h history at most
         // every 20s, just append the live mark in between — no blank flash.
@@ -633,7 +633,7 @@
         try {
           const state = await (await fetch("/api/state")).json();
           livePerpState = state;
-          renderPerpSummary();
+          renderPerpStatus();
           if (!state.wallet) {
             $("livedot").className = "dot standby";
             $("livetxt").textContent = "perp standing by — no wallet armed";
@@ -646,7 +646,7 @@
           else renderEmpty(state);
         } catch {
           if (livePerpState) livePerpState = { ...livePerpState, stale: true };
-          renderPerpSummary();
+          renderPerpStatus();
           $("livedot").className = "dot stale";
           $("livetxt").textContent = "perp feed unavailable";
         }
@@ -776,7 +776,7 @@
       }
 
       if (REPLAY) {
-        $("episode").hidden = true;
+        document.body.classList.add("replay");
         runReplay().catch((e) => {
           console.error(e);
           $("livetxt").textContent = "the archive would not speak";

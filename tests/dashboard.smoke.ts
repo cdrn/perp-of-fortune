@@ -88,7 +88,7 @@ test('paired dashboard browser smoke checks', { timeout: 90_000 }, async (t) => 
   }
   async function noOverflow(p: Page) {
     const bounds = await p.evaluate(() => ({ width: innerWidth, documentWidth: document.documentElement.scrollWidth,
-      cards: [...document.querySelectorAll('.episode-card')].map(el => ({ left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })) }));
+      cards: [...document.querySelectorAll('.leg')].map(el => ({ left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })) }));
     assert.ok(bounds.documentWidth <= bounds.width, `document overflow: ${JSON.stringify(bounds)}`);
     for (const card of bounds.cards) assert.ok(card.left >= 0 && card.right <= bounds.width, `card overflow: ${JSON.stringify(card)}`);
   }
@@ -96,10 +96,8 @@ test('paired dashboard browser smoke checks', { timeout: 90_000 }, async (t) => 
     await t.test('standby explains the two planned roles without fabricated holdings', async () => {
       await load();
       assert.equal(await page.locator('#episode').isVisible(), true);
-      assert.match(await text('#episode-description'), /hourly Bitcoin binary and a perp/);
-      assert.equal(await text('#binary-pnl'), 'Awaiting execution');
-      assert.equal(await text('#perp-live-pnl'), 'Awaiting live position');
-      assert.equal(await text('#binary-shares'), '—');
+      assert.equal(await text('#binary-pnl'), 'Not yet placed');
+      assert.equal(await text('#binary-stake'), '$50');
       assert.equal(await text('#binary-payout'), '—');
       assert.equal(await page.locator('button').count(), 0);
     });
@@ -109,32 +107,20 @@ test('paired dashboard browser smoke checks', { timeout: 90_000 }, async (t) => 
       await load();
       assert.equal(await text('#episode-theme'), e.theme);
       assert.equal(await text('#binary-title'), 'Bitcoin · DOWN');
-      assert.equal(await text('#binary-buy'), '54¢');
-      assert.equal(await text('#binary-pnl'), 'Awaiting execution');
-      assert.match(await text('#binary-window'), /Market:.*Settlement:.*expected/);
+      assert.equal(await text('#binary-pnl'), 'Not yet placed');
       assert.match(await text('#binary-countdown'), /\d+m \d+s/);
-      assert.equal(await text('#perp-plan-title'), 'LONG TAO');
-      assert.equal(await text('#perp-plan-margin'), '$50.00');
-    });
+      assert.equal(await text('#perp-plan-title'), 'LONG TAO · 10×');
+          });
     await t.test('confirmed fills display entry-fee-inclusive P&L beside a live perp chart', async () => {
       const e = fill(episode());
       episodeResponse = { episode: e, binary: binaryView(e, quote(), null) };
       state = livePerp;
       await load();
       await page.locator('#pnl').waitFor();
-      assert.equal(await text('#binary-shares'), '90');
-      assert.equal(await text('#binary-average'), '50¢');
-      assert.equal(await text('#binary-cost'), '$46.56');
-      assert.equal(await text('#binary-fees'), '$1.56');
-      assert.equal(await text('#binary-exit'), '$46.80');
+      assert.equal(await text('#binary-stake'), '$46.56');
       assert.equal(await text('#binary-pnl'), '+$0.24');
-      assert.match(await text('#binary-note'), /before exit fees/);
-      assert.match(await text('#binary-note'), /Holdings last checked/);
-      assert.equal(await text('#pnl'), '+$5.00');
-      assert.equal(await text('#perp-live-pnl'), '+$5.00');
-      assert.equal(await text('#perp-live-entry'), '$500.00');
-      assert.equal(await text('#perp-live-mark'), '$505.00');
-      await page.locator('#spark path').first().waitFor({ state: 'attached' });
+                  assert.equal(await text('#pnl'), '+$5.00');
+                        await page.locator('#spark path').first().waitFor({ state: 'attached' });
       await noOverflow(page);
       if (process.env.DASHBOARD_SCREENSHOT) await page.screenshot({ path: process.env.DASHBOARD_SCREENSHOT, fullPage: true, animations: 'disabled' });
     });
@@ -146,18 +132,14 @@ test('paired dashboard browser smoke checks', { timeout: 90_000 }, async (t) => 
       assert.equal(await text('#binary-countdown'), 'Settled');
       assert.equal((await text('#binary-pnl-label')).toLowerCase(), 'final fortune');
       assert.equal(await text('#binary-pnl'), '+$43.44');
-      assert.equal(await text('#binary-exit-label'), 'Settlement value');
-      assert.equal(await text('#binary-exit'), '$90.00');
-    });
+                });
     await t.test('a different live perp is not presented as the episode selection', async () => {
       const e = episode();
       e.perp.coin = 'SOL';
       episodeResponse = { episode: e, binary: binaryView(e, quote(), null) };
       await load();
-      assert.equal(await text('#perp-plan-title'), 'LONG SOL');
-      assert.equal(await text('#perp-live-pnl'), 'Awaiting live position');
-      assert.equal(await text('#perp-live-entry'), '—');
-      assert.equal(await text('#pnl'), '+$5.00');
+      assert.equal(await text('#perp-plan-title'), 'LONG SOL · 20×');
+                  assert.equal(await text('#pnl'), '+$5.00');
     });
     await t.test('stale reconciliation suppresses valuation without hiding the perp', async () => {
       const e = fill(episode());
@@ -165,7 +147,6 @@ test('paired dashboard browser smoke checks', { timeout: 90_000 }, async (t) => 
       episodeResponse = { episode: e, binary: binaryView(e, quote(), null) };
       await load();
       assert.equal(await text('#episode-feed'), 'Binary data is stale');
-      assert.equal(await text('#binary-exit'), '—');
       assert.equal(await text('#binary-pnl'), 'Value unavailable');
       assert.equal(await text('#pnl'), '+$5.00');
       assert.equal(await page.locator('#binary-error').isVisible(), true);
@@ -189,7 +170,7 @@ test('paired dashboard browser smoke checks', { timeout: 90_000 }, async (t) => 
       await load();
       assert.equal(await text('#episode-theme'), e.theme);
       assert.equal(await page.locator('#episode-theme img').count(), 0);
-      assert.equal(await page.locator('#binary-market-link').isVisible(), false);
+      assert.equal(await page.locator('#binary-market a').isVisible(), false);
       assert.equal(await page.evaluate('window.injection'), undefined);
       await noOverflow(page);
     });

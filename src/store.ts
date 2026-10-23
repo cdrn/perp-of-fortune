@@ -34,6 +34,14 @@ export interface ClosedRun {
   wasLiquidated: number;
 }
 
+export interface EpisodePoint {
+  episodeId: string;
+  ts: number;
+  btc: number | null;
+  buy: number | null;
+  sell: number | null;
+}
+
 export class Store {
   private db: Database.Database;
 
@@ -61,6 +69,15 @@ export class Store {
         leverage REAL NOT NULL,
         opened_ts INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS episode_points (
+        episode_id TEXT NOT NULL,
+        ts INTEGER NOT NULL,
+        btc REAL,
+        buy REAL,
+        sell REAL
+      );
+      CREATE INDEX IF NOT EXISTS idx_episode_points ON episode_points(episode_id, ts);
 
       CREATE TABLE IF NOT EXISTS closed_position (
         coin TEXT NOT NULL,
@@ -158,6 +175,17 @@ export class Store {
         wasLiquidated ? 1 : 0,
       );
     this.db.prepare(`DELETE FROM open_position WHERE coin = ?`).run(coin);
+  }
+
+  // Hourly-binary chart feed: BTC price + this side's buy/sell quote per poll.
+  insertEpisodePoint(p: EpisodePoint): void {
+    this.db.prepare(`INSERT INTO episode_points (episode_id, ts, btc, buy, sell) VALUES (?, ?, ?, ?, ?)`)
+      .run(p.episodeId, p.ts, p.btc, p.buy, p.sell);
+  }
+  episodePoints(episodeId: string, sinceTs = 0): EpisodePoint[] {
+    return this.db
+      .prepare(`SELECT episode_id as episodeId, ts, btc, buy, sell FROM episode_points WHERE episode_id = ? AND ts >= ? ORDER BY ts ASC`)
+      .all(episodeId, sinceTs) as EpisodePoint[];
   }
 
   history(coin: string, sinceTs: number): Snapshot[] {

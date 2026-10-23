@@ -195,4 +195,15 @@ test("a flipped episode perp stays visible and closes the old side's row", (t) =
     env: { ...process.env, UNDERPOD_WALLET: wallet, UNDERPOD_EPISODE: episodePath, UNDERPOD_DEXES: "" },
   });
   assert.equal(result.status, 0, result.stderr);
+test("the tracker records BTC price and quote points only inside the episode hour", async () => {
+  const e = fixture();
+  const tracker = new EpisodeTracker({ getQuote: async () => quote(), getSettlement: async () => null }, () => e, null, async () => 84321);
+  await tracker.tick();
+  assert.equal(tracker.points().length, 1);
+  assert.equal(tracker.points()[0]!.btc, 84321);
+  assert.equal(tracker.points()[0]!.sell, 0.49);
+  const early = fixture(); early.startsAt = early.binary.market.startsAt = now + 3_600_000; early.endsAt = early.binary.market.endsAt = now + 7_200_000;
+  const idle = new EpisodeTracker({ getQuote: async () => quote(), getSettlement: async () => null }, () => early, null, async () => 84321);
+  await idle.tick();
+  assert.equal(idle.points().length, 0);
 });
