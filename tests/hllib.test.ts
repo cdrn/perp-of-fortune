@@ -113,6 +113,8 @@ test("episode commands preserve the selected perp, reject overrides and pin the 
       { universe: [{ name: "BTC", szDecimals: 5, maxLeverage: 40 }, { name: "SOL", szDecimals: 2, maxLeverage: 20 }] },
       [{ markPx: "100000" }, { markPx: "200" }]
     ]);
+    // Builder dexes are empty: the episode's SOL lives on the main dex.
+    if (request.type === "clearinghouseState" && request.dex) return Response.json({ assetPositions: [] });
     if (request.type === "clearinghouseState") return Response.json({ assetPositions: [
       { position: { coin: "BTC", szi: "1", entryPx: "100000", positionValue: "100000", leverage: { type: "isolated", value: 40 } } },
       { position: { coin: "SOL", szi: "-2.5", entryPx: "200", positionValue: "500", leverage: { type: "isolated", value: 10 } } }
@@ -121,7 +123,7 @@ test("episode commands preserve the selected perp, reject overrides and pin the 
   };`);
   const run = (...args: string[]) => spawnSync(process.execPath,
     ["--import", "tsx", "--import", mock, resolve("scripts/hl.ts"), ...args],
-    { cwd: process.cwd(), env: { ...process.env, TMPDIR: directory, UNDERPOD_EPISODE: path, UNDERPOD_WALLET: user, HL_NET: "testnet" }, encoding: "utf8" });
+    { cwd: process.cwd(), env: { ...process.env, TMPDIR: directory, UNDERPOD_EPISODE: path, UNDERPOD_WALLET: user, HL_NET: "testnet", UNDERPOD_DEX: "xyz" }, encoding: "utf8" });
   const pending = () => JSON.parse(readFileSync(join(directory, "underpod-hl-pending.json"), "utf8"));
 
   let result = run("prepare-leverage", "--episode");
@@ -139,9 +141,11 @@ test("episode commands preserve the selected perp, reject overrides and pin the 
     assert.match(result.stderr, /conflicts with the saved episode/);
   }
 
+  // UNDERPOD_DEX=xyz must not redirect the close of a main-dex episode coin,
+  // and closes keep the wide 5% band so they fill on air.
   result = run("prepare-close", "--episode", path);
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(pending().action.orders[0], { a: 1, b: true, p: "201", s: "2.5", r: true, t: { limit: { tif: "Ioc" } } });
+  assert.deepEqual(pending().action.orders[0], { a: 1, b: true, p: "210", s: "2.5", r: true, t: { limit: { tif: "Ioc" } } });
 
   episode.perpNetwork = "mainnet";
   writeFileSync(path, JSON.stringify(episode));
