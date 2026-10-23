@@ -195,6 +195,8 @@ test("a flipped episode perp stays visible and closes the old side's row", (t) =
     env: { ...process.env, UNDERPOD_WALLET: wallet, UNDERPOD_EPISODE: episodePath, UNDERPOD_DEXES: "" },
   });
   assert.equal(result.status, 0, result.stderr);
+});
+
 test("the tracker records BTC price and quote points only inside the episode hour", async () => {
   const e = fixture();
   const tracker = new EpisodeTracker({ getQuote: async () => quote(), getSettlement: async () => null }, () => e, null, async () => 84321);
